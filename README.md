@@ -36,7 +36,7 @@
 |---|---|---|
 | **JDK** | **11**（兼容 8） | `pom.xml` 中 `maven.compiler.source/target = 11`。用 17/21 编译出的 class 在 Tomcat 9 上会报 `UnsupportedClassVersionError` |
 | **Maven** | **3.6.3 及以上** | IDEA 自带 Maven 也可，需配置阿里云镜像加速 |
-| **Tomcat** | **9.0.x**（推荐）或 **8.5.x** | ⚠️ **不要用 Tomcat 10+**：它改用 `jakarta.servlet` 包名，本项目基于 `javax.servlet`，部署后必然 404 / 类找不到 |
+| **Tomcat** | **9.0.x**（推荐）或 **8.5.x** | ⚠️ **不要用 Tomcat 10+**：它改用 `jakarta.servlet` 包名，本项目基于 `javax.servlet`，部署后必然 404 / 类找不到。<br>⚠️ **Tomcat 7 能跑但不推荐**：`web.xml` 已降级为 Servlet 3.0 可兼容，但 Tomcat 7 与 JDK 11+ 存在已知兼容问题（见 FAQ Q16），且已停止维护 |
 | **MySQL** | **8.0.x**（兼容 5.7） | 驱动 `mysql-connector-java 8.0.33`；5.7 也需用 `com.mysql.cj.jdbc.Driver` |
 | **IDEA** | IntelliJ IDEA 2022.3 及以上 | Community 版用外置 Tomcat 运行；Ultimate 版可用 Smart Tomcat 或外置 Tomcat |
 | 操作系统 | Windows 10/11（亦支持 macOS / Linux） | 部署步骤以 Windows 为例 |
@@ -681,6 +681,71 @@ JDBC URL 带 `characterEncoding=UTF-8`；数据库字符集为 `utf8mb4`。
 
 Tomcat 10+ 改用 `jakarta.servlet`，本项目基于 `javax.servlet`。
 **请使用 Tomcat 8.5 或 9.0**。
+
+**Q16：Tomcat 7 启动报 `发生在第[N]行，属性[N]` / `Context 启动失败`**
+
+这是 `web.xml` 格式或版本不被 Tomcat 7 接受。两种情况：
+
+**情况 A：XML 注释里有连续减号**
+
+`org.apache.catalina.startup.ContextConfig parseWebXml` 报错并指出行号时，
+先看那一行是不是注释。XML 规范禁止注释内容出现连续两个减号，例如：
+
+```xml
+<!-- ============ 分隔线 ============ -->   <!-- 非法！ -->
+<!-- 说明文字 ---- 分隔 ---- -->            <!-- 非法！ -->
+```
+
+改成不含连续减号的写法即可：
+
+```xml
+<!-- 分隔线（用等号或中文符号） -->
+<!-- 说明文字（用括号或空行分隔） -->
+```
+
+**情况 B：`web.xml` 声明了 Servlet 3.1 但 Tomcat 是 7**
+
+Tomcat 7 只支持到 **Servlet 3.0**，不认 `version="3.1"`，
+也不认 `<cookie-config>`、`<tracking-mode>` 这些 3.1 新增元素。
+
+本项目当前 `web.xml` 已改为兼容写法：
+
+```xml
+<web-app xmlns="http://java.sun.com/xml/ns/javaee"
+         xsi:schemaLocation="http://java.sun.com/xml/ns/javaee
+         http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd"
+         version="3.0">
+```
+
+> Cookie 的 `HttpOnly` 由 Tomcat 的 cookie processor 默认提供（Tomcat 7 起默认开启），
+> 去掉 `<cookie-config>` 不会降低安全性。
+
+自检命令（改完 `web.xml` 后务必执行，能提前发现格式错误）：
+
+```bash
+# 用 PowerShell 校验 XML 是否合法
+[xml]$x = Get-Content src/main/webapp/WEB-INF/web.xml
+$x.DocumentElement.version
+```
+
+**Q17：Tomcat 7 启动后日志末尾报 `ClassCastException: java.io.ObjectStreamClass$Caches$1 cannot be cast to java.util.Map`**
+
+**这是 Tomcat 7 与 JDK 16+ 的已知兼容问题，与项目代码无关，不影响应用运行。**
+
+原因：`java.io.ObjectStreamClass$Caches` 在 JDK 16 中改变了内部实现，
+不再是 `Map`；而 Tomcat 7 的 `WebappClassLoaderBase.clearCache()` 仍按 `Map` 强转，
+于是抛出该异常。Tomcat 7 最后版本（7.0.109）发布于 2021 年，不覆盖 JDK 17+。
+
+处理方案（按推荐度排序）：
+
+| 方案 | 做法 | 效果 |
+|---|---|---|
+| **① 升级 Tomcat（推荐）** | 换用 **Tomcat 9.0.x** | 彻底解决，且支持 Servlet 4.0 / JDK 11+ |
+| ② 降级 JDK | 给 Tomcat 单独配 **JDK 8**（不影响系统默认 JDK） | 消除告警，但失去了新 JDK 的安全更新 |
+| ③ 忽略 | 不改动 | 该异常发生在**应用停止时的资源清理阶段**，不影响启动和运行 |
+
+如果你必须继续用 Tomcat 7 + JDK 25，方案 ③ 是可接受的——它只是一条警告（`警告` 级别），
+发生在 `StandardContext.startInternal` 之后的清理环节，应用本身可以正常访问。
 
 **Q9：`pom.xml` 在 IDEA 中没有 Maven 图标**
 

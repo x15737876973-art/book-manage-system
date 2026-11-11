@@ -1,22 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+<!--
+  图书管理系统部署描述文件
+  兼容 Servlet 3.0（Tomcat 7 / 8 / 9 均可加载）。
+  注意：XML 注释中不允许出现连续两个减号，因此下方所有注释
+        都不使用等号或减号组成的分隔线。
+-->
+<web-app xmlns="http://java.sun.com/xml/ns/javaee"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee
-         http://xmlns.jcp.org/xml/ns/javaee/web-app_3_1.xsd"
-         version="3.1">
+         xsi:schemaLocation="http://java.sun.com/xml/ns/javaee
+         http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd"
+         version="3.0">
 
   <display-name>图书管理系统</display-name>
 
-  <!-- ==================================================================
-       欢迎页面
-       ================================================================== -->
+  <!-- 欢迎页面 -->
   <welcome-file-list>
     <welcome-file>index.jsp</welcome-file>
   </welcome-file-list>
 
-  <!-- ==================================================================
-       字符编码过滤器：统一 UTF-8，解决中文乱码
-       ================================================================== -->
+  <!-- 字符编码过滤器：统一 UTF-8，解决中文乱码 -->
   <filter>
     <filter-name>encodingFilter</filter-name>
     <filter-class>com.book.filter.EncodingFilter</filter-class>
@@ -30,13 +32,11 @@
     <url-pattern>/*</url-pattern>
   </filter-mapping>
 
-  <!-- ==================================================================
-       登录与角色校验过滤器
-       规则见 LoginCheckFilter 注释：
-         /admin/** 及初始化类接口 → 仅 admin
-         /reader/**               → 仅 reader
-         login/register/agent 等  → 公开
-       ================================================================== -->
+  <!--
+    登录与角色校验过滤器。
+    规则见 LoginCheckFilter 注释：/admin 下及初始化类接口仅 admin 可访问，
+    /reader 下仅 reader 可访问，login、register、agent 等为公开页面。
+  -->
   <filter>
     <filter-name>loginCheckFilter</filter-name>
     <filter-class>com.book.filter.LoginCheckFilter</filter-class>
@@ -46,27 +46,23 @@
     <url-pattern>/*</url-pattern>
   </filter-mapping>
 
-  <!-- ==================================================================
-       会话配置
-       ================================================================== -->
+  <!--
+    会话配置。
+    说明：http-only 与 tracking-mode 属于 Servlet 3.1 元素，
+    为保证在 Tomcat 7（Servlet 3.0）上也能正常启动，此处只保留
+    3.0 支持的 session-timeout。Cookie 的 HttpOnly 由 Tomcat 的
+    cookie processor 默认提供（Tomcat 7 起默认开启）。
+  -->
   <session-config>
     <session-timeout>30</session-timeout>
-    <cookie-config>
-      <!-- 防止 JS 读取会话 Cookie，降低 XSS 窃取会话的风险 -->
-      <http-only>true</http-only>
-    </cookie-config>
-    <tracking-mode>COOKIE</tracking-mode>
   </session-config>
 
-  <!-- ==================================================================
-       统一错误页配置
-       ------------------------------------------------------------------
-       目的：任何未捕获异常或错误状态码，都被导向友好的错误页面，
-       不把 Java 堆栈直接打印到浏览器。
-
-         error.jsp 中通过 ${requestScope.error} 展示友好提示，
-         详细堆栈只写入服务器日志（getServletContext().log）。
-       ================================================================== -->
+  <!--
+    统一错误页配置。
+    目的：任何未捕获异常或错误状态码都被导向友好错误页，
+    不把 Java 堆栈直接打印到浏览器。
+    error.jsp 通过 request 属性展示友好提示，详细堆栈只写入服务器日志。
+  -->
   <error-page>
     <error-code>400</error-code>
     <location>/error.jsp</location>
