@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>快速访问 - 图书管理系统</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        .section h2 {
+            color: #667eea;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        .link-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        .link-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            text-decoration: none;
+            color: #333;
+            transition: all 0.3s;
+            border-left: 4px solid #667eea;
+        }
+        .link-card:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        .link-card .icon {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        .link-card .title {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        .link-card .desc {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        .info-box {
+            background: #e7f3ff;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+        .info-box h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        .account-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        .account-info p {
+            margin: 5px 0;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status.online {
+            background: #28a745;
+            color: white;
+        }
+        .status.offline {
+            background: #dc3545;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📚 图书管理系统 - 快速访问</h1>
+        
+        <div class="info-box">
+            <h3>📋 系统信息</h3>
+            <p><strong>项目路径：</strong>C:\java\untitled6</p>
+            <p><strong>访问端口：</strong>8080</p>
+            <p><strong>数据库：</strong>SQLite (book_manage.db)</p>
+            
+            <div class="account-info">
+                <p><strong>默认账号：</strong></p>
+                <p>👤 管理员：<code>a</code> / <code>123456</code></p>
+                <p>👤 读者：<code>d</code> / <code>123456</code></p>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🔐 登录与注册</h2>
+            <div class="link-grid">
+                <a href="login.jsp" class="link-card">
+                    <div class="icon">🔐</div>
+                    <div class="title">登录页面</div>
+                    <div class="desc">系统登录入口</div>
+                </a>
+                <a href="register.jsp" class="link-card">
+                    <div class="icon">📝</div>
+                    <div class="title">注册页面</div>
+                    <div class="desc">新用户注册</div>
+                </a>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>👨‍💼 管理员功能</h2>
+            <div class="link-grid">
+                <a href="admin/index.jsp" class="link-card">
+                    <div class="icon">🏠</div>
+                    <div class="title">管理员首页</div>
+                    <div class="desc">管理后台主页</div>
+                </a>
+                <a href="admin/bookManageServlet?action=list" class="link-card">
+                    <div class="icon">📚</div>
+                    <div class="title">图书管理</div>
+                    <div class="desc">查看和管理图书</div>
+                </a>
+                <a href="admin/forceInsertBooks" class="link-card">
+                    <div class="icon">➕</div>
+                    <div class="title">导入图书数据</div>
+                    <div class="desc">一键导入20本图书</div>
+                </a>
+                <a href="admin/userServlet?action=list" class="link-card">
+                    <div class="icon">👥</div>
+                    <div class="title">用户管理</div>
+                    <div class="desc">管理读者信息</div>
+                </a>
+                <a href="admin/borrowServlet?action=current" class="link-card">
+                    <div class="icon">📖</div>
+                    <div class="title">借阅管理</div>
+                    <div class="desc">借书还书操作</div>
+                </a>
+                <a href="admin/testBooks.jsp" class="link-card">
+                    <div class="icon">🔍</div>
+                    <div class="title">数据诊断</div>
+                    <div class="desc">检查数据库状态</div>
+                </a>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>👤 读者功能</h2>
+            <div class="link-grid">
+                <a href="reader/index.jsp" class="link-card">
+                    <div class="icon">🏠</div>
+                    <div class="title">读者首页</div>
+                    <div class="desc">读者个人中心</div>
+                </a>
+                <a href="reader/bookSearch.jsp" class="link-card">
+                    <div class="icon">🔍</div>
+                    <div class="title">图书搜索</div>
+                    <div class="desc">搜索和预约图书</div>
+                </a>
+            </div>
+        </div>
+        
+        <div class="info-box" style="background: #fff3cd; border-left-color: #ffc107;">
+            <h3 style="color: #ffc107;">⚠️ 使用说明</h3>
+            <ol>
+                <li>如果页面无法访问，请先<strong>启动服务器</strong></li>
+                <li>双击运行 <code>启动服务器.vbs</code> 或 <code>启动服务器.ps1</code></li>
+                <li>等待服务器启动完成（约10-30秒）</li>
+                <li>首次使用请点击"导入图书数据"导入示例数据</li>
+            </ol>
+        </div>
+    </div>
+</body>
+</html>

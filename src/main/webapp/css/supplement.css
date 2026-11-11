@@ -1,0 +1,122 @@
+/* =============================================
+   补充样式 - 空数据占位图和重要信息高亮
+   ============================================= */
+
+/* 空数据占位图 */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #999;
+}
+
+.empty-state .empty-icon {
+    font-size: 80px;
+    color: #d9d9d9;
+    margin-bottom: 20px;
+    opacity: 0.6;
+}
+
+.empty-state .empty-text {
+    font-size: 16px;
+    color: #999;
+    margin-bottom: 10px;
+    font-weight: 500;
+}
+
+.empty-state .empty-desc {
+    font-size: 13px;
+    color: #bbb;
+}
+
+.empty-state img {
+    max-width: 200px;
+    margin-bottom: 20px;
+    opacity: 0.8;
+}
+
+/* 重要信息高亮 - 到期日期、欠费金额 */
+.highlight-danger {
+    color: #dc3545;
+    font-weight: 600;
+    font-size: 15px;
+}
+
+.highlight-warning {
+    color: #ff8c00;
+    font-weight: 600;
+    font-size: 15px;
+}
+
+/* 表格中的重要信息 */
+table td .important-date {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+table td .important-money {
+    color: #ff8c00;
+    font-weight: 600;
+    font-size: 15px;
+}
+
+/* Logo和图标增强 */
+.header .logo-icon {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.header .logo-icon .library-icon {
+    font-size: 32px;
+}
+
+.header .logo-icon .book-icon {
+    font-size: 24px;
+}
+
+/* 菜单图标增强 */
+.sidebar ul li a .menu-icon {
+    font-size: 18px;
+    margin-right: 12px;
+    width: 24px;
+    text-align: center;
+    opacity: 0.8;
+}
+
+.sidebar ul li a:hover .menu-icon,
+.sidebar ul li a.active .menu-icon {
+    opacity: 1;
+}
+
+/* 统计卡片图标 */
+.stat-card .icon {
+    font-size: 40px;
+}
+
+/* 无数据表格提示 */
+.table-empty {
+    text-align: center;
+    padding: 40px;
+    color: #999;
+}
+
+.table-empty .icon {
+    font-size: 60px;
+    color: #d9d9d9;
+    margin-bottom: 15px;
+}
+
+.table-empty .text {
+    font-size: 14px;
+}
+
+/* 响应式优化 */
+@media screen and (max-width: 768px) {
+    .empty-state {
+        padding: 40px 15px;
+    }
+    
+    .empty-state .empty-icon {
+        font-size: 60px;
+    }
+}

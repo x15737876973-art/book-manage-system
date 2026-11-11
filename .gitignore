@@ -1,0 +1,28 @@
+# IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Maven
+target/
+
+# 其他杂项
+*.log
+.DS_Store
+Thumbs.db
+*.db
+*.zip
+
+# Eclipse、VS Code 你不用可以删掉，留着也没事
+.vscode/
+.settings/
+.classpath
+.project
+
+# 本地数据库连接配置（含密码，绝不可提交；仓库只保留 db.properties.example 模板）
+db.properties
+src/main/resources/db.properties
+
+# 编辑器/工具目录
+.feisuan/
