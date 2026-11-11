@@ -86,8 +86,11 @@ public class AgentQueryServlet extends HttpServlet {
 
             // 检索为空：直接如实告知，不调用模型（避免模型编造）
             if (books.isEmpty()) {
-                String answer = "抱歉，本馆暂未收录与「" + question + "」相关的图书。"
-                        + "您可以尝试换一个书名、作者或类别关键词再问一次。";
+                String answer = "抱歉，本馆暂未收录与「" + question + "」相关的图书。\n\n"
+                        + "您可以试试：\n"
+                        + "· 换一个更短的关键词（只输入书名或作者名）\n"
+                        + "· 到「图书检索」页浏览全部馆藏\n"
+                        + "· 询问「推荐几本计算机类的书」看看当前有哪些可借图书";
                 writeJson(response, true, answer, books, "local", "no_result");
                 return;
             }

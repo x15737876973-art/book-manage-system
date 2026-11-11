@@ -1,6 +1,9 @@
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 <%@ page import="com.book.agent.AgentConfig" %>
 <%@ page import="com.book.entity.User" %>
+<%@ page import="com.book.dao.BookDao" %>
+<%@ page import="com.book.entity.Book" %>
+<%@ page import="java.util.List" %>
 <%
     /*
      * 智能图书助手页面（轻量 RAG 问答）。
@@ -21,6 +24,26 @@
                 ? u.getRealName() : u.getUsername();
     }
     String ctx = request.getContextPath();
+
+    // 读取馆藏概况：让用户一眼看到库里到底有什么，避免问"不存在的书"后以为是系统坏了
+    int kbcTotal = 0;
+    String kbcSample = "";
+    String kbcError = null;
+    try {
+        BookDao kbcDao = new BookDao();
+        kbcTotal = kbcDao.count();
+        List<Book> kbcBooks = kbcDao.recommendBest(8);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < kbcBooks.size(); i++) {
+            if (i > 0) {
+                sb.append("、");
+            }
+            sb.append("《").append(kbcBooks.get(i).getBname()).append("》");
+        }
+        kbcSample = sb.toString();
+    } catch (Exception e) {
+        kbcError = "读取馆藏失败，请检查数据库连接";
+    }
 %>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -72,6 +95,26 @@
         }
         .status-dot.on { background: #27ae60; }
         .status-dot.off { background: #f39c12; }
+
+        /* 馆藏概况条 */
+        .kbc-bar {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font-size: 13px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            background: #f0f7ff;
+            border: 1px solid #d6e8fb;
+            color: #2c5c8f;
+            line-height: 1.6;
+        }
+        .kbc-bar .kbc-icon { flex: none; }
+        .kbc-bar .kbc-text { flex: 1; word-break: break-word; }
+        .kbc-bar code {
+            background: #e3eefb; padding: 1px 5px;
+            border-radius: 3px; font-size: 12px;
+        }
 
         .chat-card {
             background: #fff;
@@ -235,6 +278,26 @@
         <% } %>
     </div>
 
+    <!-- 馆藏概况：让用户清楚库里有什么，避免问不存在的书后误以为系统故障 -->
+    <div class="kbc-bar">
+        <% if (kbcError != null) { %>
+            <span class="kbc-icon">⚠️</span>
+            <span class="kbc-text"><%=kbcError%></span>
+        <% } else if (kbcTotal == 0) { %>
+            <span class="kbc-icon">📭</span>
+            <span class="kbc-text">
+                当前<strong>馆藏为空</strong>，请管理员先执行系统初始化
+                （<code>/initSystem</code>）再使用智能问答。
+            </span>
+        <% } else { %>
+            <span class="kbc-icon">📚</span>
+            <span class="kbc-text">
+                当前馆藏 <strong><%=kbcTotal%></strong> 种图书<% if (!kbcSample.isEmpty()) { %>，例如：<%=kbcSample%><% } %>。
+                请从以上书名或作者中查找。
+            </span>
+        <% } %>
+    </div>
+
     <!-- 对话区 -->
     <div class="chat-card">
         <div class="chat-body" id="chatBody">
@@ -248,25 +311,48 @@
 · 按作者 / 出版社 / 类别荐书
 · 告诉你某本书的库存和存放位置
 
-注意：我的回答严格基于本馆数据库中的真实馆藏，不会编造不存在的书籍。
+<% if (kbcTotal > 0) { %>当前馆藏共 <%=kbcTotal%> 种图书，下方快捷提问会根据真实馆藏生成。
+<% } %>⚠️ 我的回答严格基于本馆数据库中的真实馆藏，不会编造不存在的书籍。
+如果你问的书本馆没有，我会明确告诉你"暂未收录"。
                 </div>
             </div>
         </div>
 
         <div class="chat-input">
-            <textarea id="questionInput" placeholder="试试问：有《三体》吗？／推荐几本计算机类的书"
+            <textarea id="questionInput" placeholder="输入书名 / 作者 / 类别，例如：红楼梦、曹雪芹、计算机"
                       maxlength="200"></textarea>
             <button id="sendBtn" type="button">发送</button>
         </div>
     </div>
 
-    <!-- 快捷提问 -->
+    <!-- 快捷提问：按数据库真实馆藏动态生成，避免点了就"未收录" -->
     <div class="quick-asks">
-        <button type="button" data-q="本馆有《三体》吗？">有没有《三体》</button>
-        <button type="button" data-q="推荐几本计算机类的图书">推荐计算机类图书</button>
-        <button type="button" data-q="刘慈欣的书有哪些？">刘慈欣的书</button>
+        <%
+            if (kbcTotal > 0) {
+                try {
+                    BookDao qDao = new BookDao();
+                    List<Book> quickBooks = qDao.recommendBest(3);
+                    for (Book qb : quickBooks) {
+                        String qName = qb.getBname() == null ? "" : qb.getBname();
+                        String qAuthor = qb.getAuthor() == null ? "" : qb.getAuthor();
+                        // 书本名按钮
+        %>
+                        <button type="button" data-q="本馆有《<%=qName%>》吗？">有没有《<%=qName%>》</button>
+        <%
+                        // 作者按钮（作者非空且不同于书名时）
+                        if (!qAuthor.isEmpty() && !qAuthor.equals(qName)) {
+        %>
+                        <button type="button" data-q="<%=qAuthor%>的书有哪些？"><%=qAuthor%>的书</button>
+        <%
+                        }
+                    }
+                } catch (Exception ignore) {
+                    // 动态生成失败时使用通用提问
+                }
+            }
+        %>
         <button type="button" data-q="有哪些书现在可以借？">现在能借的书</button>
-        <button type="button" data-q="有没有关于历史的书？">历史类图书</button>
+        <button type="button" data-q="推荐几本图书">随便推荐几本</button>
     </div>
 </div>
 

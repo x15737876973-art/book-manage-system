@@ -132,7 +132,15 @@ public final class AgentConfig {
         }
     }
 
-    /** 按优先级解析 API Key */
+    /**
+     * 按优先级解析 API Key。
+     *
+     * <p>除了去除空白与排除模板占位值，还会做<b>格式预检</b>：
+     * DeepSeek 的 Key 形如 {@code sk-} + 32 位十六进制/字母数字，总长约 35 字符。
+     * 若读到明显不是这个格式的值（例如代码编辑器自动补全的伪 Key、
+     * 或从别处复制的 token），直接判定为"未配置"，
+     * 让页面显示「本地检索模式」而不是等到调用接口才报 401。</p>
+     */
     private static String resolveApiKey(Properties props) {
         String key = System.getenv(ENV_API_KEY);
         if (isBlank(key)) {
@@ -145,8 +153,23 @@ public final class AgentConfig {
             return null;
         }
         key = key.trim();
+
         // 排除模板占位值
-        if (key.startsWith("在这里") || key.contains("your-api-key") || key.equals("sk-xxx")) {
+        if (key.startsWith("在这里") || key.contains("your-api-key")
+                || key.equals("sk-xxx") || key.equals("sk-xxxxxxxxxxxxxxxx")) {
+            System.out.println("[AgentConfig] 检测到模板占位值，视为未配置 API Key");
+            return null;
+        }
+
+        // 格式预检：DeepSeek Key 必须以 sk- 开头，长度在合理区间
+        if (!key.startsWith("sk-")) {
+            System.out.println("[AgentConfig] API Key 格式不正确（应以 sk- 开头），视为未配置。" +
+                    "当前值长度=" + key.length());
+            return null;
+        }
+        if (key.length() < 20 || key.length() > 80) {
+            System.out.println("[AgentConfig] API Key 长度异常（" + key.length() +
+                    "），DeepSeek Key 通常为 35 字符左右，视为未配置");
             return null;
         }
         return key;
