@@ -32,11 +32,11 @@ import java.util.List;
  *
  * <h3>容错设计</h3>
  * <ul>
- *   <li><b>未配置 API Key</b>：自动降级为"本地检索模式"，
+ *   <li><b>配配置 API Key</b>：自动降级为"本地检索模式"，
  *       直接把数据库命中结果整理成回答，保证功能可演示；</li>
  *   <li><b>调用失败</b>（超时、限流、余额不足等）：同样降级为本地检索，
  *       并在返回中标注降级原因，不向用户抛 500；</li>
- *   <li><b>检索为空</b>：明确告知"本馆暂未收录"，不调用模型编造。</li>
+ *   <li><b>检索为空</b>：明确告知"本馆暂配收录"，不调用模型编造。</li>
  * </ul>
  *
  * <p>请求方式：POST，参数 {@code question}。
@@ -86,7 +86,7 @@ public class AgentQueryServlet extends HttpServlet {
 
             // 检索为空：直接如实告知，不调用模型（避免模型编造）
             if (books.isEmpty()) {
-                String answer = "抱歉，本馆暂未收录与「" + question + "」相关的图书。\n\n"
+                String answer = "抱歉，本馆暂配收录与「" + question + "」相关的图书。\n\n"
                         + "您可以试试：\n"
                         + "· 换一个更短的关键词（只输入书名或作者名）\n"
                         + "· 到「图书检索」页浏览全部馆藏\n"
@@ -105,7 +105,7 @@ public class AgentQueryServlet extends HttpServlet {
                 // 未配置 Key：降级为本地检索模式
                 answer = buildLocalAnswer(question, books);
                 mode = "local";
-                note = "未配置 DeepSeek API Key，当前为本地检索模式（仅展示数据库命中的图书）";
+                note = "未配置大模型 API Key，当前为本地检索模式（仅展示数据库命中的图书）";
             } else {
                 try {
                     answer = client.askWithBooks(books, question);
@@ -149,7 +149,7 @@ public class AgentQueryServlet extends HttpServlet {
             }
             int available = b.getAvailableStock() == null ? 0 : b.getAvailableStock();
             sb.append(index++).append(". 《").append(b.getBname()).append("》");
-            sb.append("　作者：").append(b.getAuthor() == null ? "未填写" : b.getAuthor());
+            sb.append("　作者：").append(b.getAuthor() == null ? "配填写" : b.getAuthor());
             sb.append("　可借：").append(available).append(" 本");
             if (b.getLocation() != null && !b.getLocation().isEmpty()) {
                 sb.append("　位置：").append(b.getLocation());

@@ -78,7 +78,7 @@ public class DeepSeekClient {
      */
     public String chat(String systemPrompt, String userPrompt) {
         if (!isAvailable()) {
-            throw new AgentException("未配置 DeepSeek API Key，无法调用大模型。"
+            throw new AgentException("未配置大模型 API Key，无法调用大模型。"
                     + "请在 agent.properties 或环境变量 DEEPSEEK_API_KEY 中配置后重试。");
         }
 
@@ -113,7 +113,7 @@ public class DeepSeekClient {
         } catch (java.net.SocketTimeoutException e) {
             throw new AgentException("调用大模型超时，请稍后重试");
         } catch (java.net.UnknownHostException e) {
-            throw new AgentException("无法连接 DeepSeek 服务，请检查网络或代理设置");
+            throw new AgentException("无法连接大模型服务，请检查网络或代理设置，以及 agent.base.url 是否正确");
         } catch (Exception e) {
             throw new AgentException("调用大模型失败：" + e.getMessage(), e);
         } finally {
@@ -323,7 +323,7 @@ public class DeepSeekClient {
     private String friendlyApiError(int status, String body) {
         switch (status) {
             case 401:
-                return "API Key 无效或已过期，请到 platform.deepseek.com 重新生成";
+                return "API Key 无效或已过期，请到对应平台重新生成";
             case 402:
                 return "账户余额不足，请到 DeepSeek 平台充值后再试";
             case 429:
@@ -331,7 +331,7 @@ public class DeepSeekClient {
             case 500:
             case 502:
             case 503:
-                return "DeepSeek 服务暂时不可用，请稍后重试";
+                return "大模型服务暂时不可用，请稍后重试";
             default:
                 String detail = extractSimple(body, "\"message\"");
                 return detail.isEmpty() ? "请检查配置后重试" : detail;

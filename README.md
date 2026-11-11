@@ -434,51 +434,86 @@ SELECT username, password FROM users WHERE username = 'admin';
 2. **System Prompt 硬约束**：明文规定"禁止编造馆藏资料中不存在的书籍、作者、ISBN、库存"；
 3. **低温度 0.3**：事实型问答用低温，输出更稳定、更少发散。
 
-### 一、申请 DeepSeek API Key
+### 一、支持的大模型平台
 
-1. 打开 **https://platform.deepseek.com**，注册并登录；
-2. 左侧菜单 → **`API keys`** → 点击 **`创建 API key`**；
-3. 输入名称（如 `book-manage-system`）→ 创建；
-4. **立刻复制**弹出的 `sk-xxxxxxxxxxxxxxxx` —— **只显示一次**，关闭后无法再查看；
-5. 妥善保管，**不要**提交到 Git、不要截图外发。
+本模块按 **OpenAI 兼容协议**（`POST {base.url}/chat/completions`）调用，因此任何提供该协议的服务都能直接使用。**只需改配置，不用改代码**：
 
-> 计费说明：DeepSeek 按 token 计费，图书问答这类短对话消耗很低，
-> 新注册账号通常有赠送额度，足够课程演示使用。
+| 平台 | `agent.base.url` | `agent.model` |
+|---|---|---|
+| **千问AI平台**（推荐） | `https://maas.qianwenai.com/compatible-mode/v1` | `qwen-plus` |
+| DeepSeek 官方 | `https://api.deepseek.com` | `deepseek-chat` |
+| 本地 Ollama | `http://localhost:11434/v1` | 如 `qwen2.5` |
+| vLLM / One-API 自建网关 | 其 OpenAI 兼容入口 | 按网关配置 |
 
-### 二、配置 API Key
+### 二、申请 API Key
 
-**方式一：环境变量（推荐，最方便）**
+#### 方案 A：千问AI平台（maas.qianwenai.com）
 
-Windows：
-1. `Win + R` → 输入 `sysdm.cpl` → `高级` → `环境变量`；
-2. 用户变量 → `新建`：
-   - 变量名：`DEEPSEEK_API_KEY`
-   - 变量值：`sk-你的key`
-3. 确定后**重启 IDEA / Tomcat** 使其生效。
+1. 登录 **https://platform.qianwenai.com**
+2. 左侧菜单 → **`API Keys`**
+3. 点右上角 **`创建 API Key`** → 复制弹出的 Key
+4. 同一页面上方 **`按量付费 Base URL` → `OpenAI 兼容`**，点右侧复制按钮
+   得到形如 `https://maas.qianwenai.com/compatible-mode/v1` 的地址
+5. 到 **`模型广场`** 查看可用模型名，本项目建议 `qwen-plus`
 
-macOS / Linux：
+> ⚠️ 千问的 Key 形如 `sk-ws-H.xxxx.yyyy.zzzz...`，**含点号、长达 100+ 字符**，
+> 这是正常的，不是复制出错。本项目已适配该格式。
 
-```bash
-export DEEPSEEK_API_KEY=sk-你的key
-```
+#### 方案 B：DeepSeek 官方
 
-**方式二：配置文件**
+1. 打开 **https://platform.deepseek.com**，注册并登录
+2. 左侧菜单 → **`API keys`** → **`创建 API key`**
+3. **立刻复制** `sk-xxxxxxxx` —— **只显示一次**
 
-1. 复制 `src/main/resources/agent.properties.example` 为 **`agent.properties`**；
-2. 修改 `agent.api.key`：
+### 三、配置 API Key
+
+**方式一：配置文件（推荐）**
+
+1. 复制 `src/main/resources/agent.properties.example` 为 **`agent.properties`**
+2. 按所用平台填写（以千问为例）：
 
 ```properties
-agent.api.key=sk-你的key
-agent.base.url=https://api.deepseek.com
-agent.model=deepseek-chat
+agent.api.key=sk-ws-H.你的千问Key
+agent.base.url=https://maas.qianwenai.com/compatible-mode/v1
+agent.model=qwen-plus
 agent.timeout.seconds=60
 agent.top.k=8
 ```
 
-3. 重新编译部署（`mvn clean package` 或重启 Tomcat）。
+3. 重新编译部署（`mvn clean package` 或重启 Tomcat）
+
+**方式二：环境变量**
+
+Windows：`Win + R` → `sysdm.cpl` → `高级` → `环境变量` → 新建用户变量
+- 变量名：`DEEPSEEK_API_KEY`（变量名沿用此名称，值可以是任意平台的 Key）
+- 变量值：你的 Key
+
+macOS / Linux：
+
+```bash
+export DEEPSEEK_API_KEY=你的Key
+```
+
+> 配置后**必须重启 Tomcat**，环境变量在进程启动时读取。
 
 > `agent.properties` 已在 `.gitignore` 中，不会进入仓库。
 > **读取优先级**：环境变量 `DEEPSEEK_API_KEY` > 系统属性 `-Ddeepseek.api.key` > `agent.properties`。
+
+### 四、验证是否真的接上了大模型
+
+打开 `agent.jsp`，看顶部状态条：
+
+| 状态 | 含义 | 处理 |
+|---|---|---|
+| 🟢 智能问答已就绪（显示模型名与脱敏 Key） | Key 已读取 | 问一句 `高等数学`，若回答是**自然语言段落**即为真接通 |
+| 🟡 本地检索模式 | Key 未读到或格式不符 | 检查 `agent.base.url`、`agent.model` 是否与平台匹配；重启 Tomcat |
+
+日志中会打印判定原因，例如：
+
+```
+[AgentConfig] 检测到模板占位值，视为未配置 API Key
+[AgentConfig] API Key 含空白字符，请检查是否复制时多了空格或换行
+```
 
 **方式三：JVM 参数**
 

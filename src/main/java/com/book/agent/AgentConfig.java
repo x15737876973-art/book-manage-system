@@ -62,7 +62,20 @@ public final class AgentConfig {
     /** 系统属性名 */
     public static final String SYS_API_KEY = "deepseek.api.key";
 
-    /** DeepSeek 官方 API 基础地址（兼容 OpenAI 协议） */
+    /**
+     * 默认 API 基础地址。
+     *
+     * <p>本模块按 <b>OpenAI 兼容协议</b>（{@code POST /chat/completions}）调用，
+     * 因此任何提供该协议的服务都能直接使用，只需改 {@code agent.base.url}：</p>
+     * <ul>
+     *   <li>DeepSeek：{@code https://api.deepseek.com}</li>
+     *   <li>千问AI平台（maas.qianwenai.com）：{@code https://maas.qianwenai.com/compatible-mode/v1}</li>
+     *   <li>本地 Ollama：{@code http://localhost:11434/v1}</li>
+     *   <li>vLLM / One-API 等自建网关：填其 OpenAI 兼容入口即可</li>
+     * </ul>
+     *
+     * <p>程序会自动处理结尾斜杠，并在缺少 {@code /chat/completions} 时补齐。</p>
+     */
     private static final String DEFAULT_BASE_URL = "https://api.deepseek.com";
     /** 默认对话模型：deepseek-chat 便宜快速；deepseek-reasoner 推理更强但更慢更贵 */
     private static final String DEFAULT_MODEL = "deepseek-chat";
@@ -135,11 +148,17 @@ public final class AgentConfig {
     /**
      * 按优先级解析 API Key。
      *
-     * <p>除了去除空白与排除模板占位值，还会做<b>格式预检</b>：
-     * DeepSeek 的 Key 形如 {@code sk-} + 32 位十六进制/字母数字，总长约 35 字符。
-     * 若读到明显不是这个格式的值（例如代码编辑器自动补全的伪 Key、
-     * 或从别处复制的 token），直接判定为"未配置"，
-     * 让页面显示「本地检索模式」而不是等到调用接口才报 401。</p>
+     * <p>只做<b>宽松的格式预检</b>，目的是拦住明显的占位值（模板里的说明文字、
+     * IDE 自动补全产生的伪值），而不是限制具体平台。不同平台的 Key 格式差异很大：</p>
+     * <ul>
+     *   <li>DeepSeek：{@code sk-} + 32 位，约 35 字符</li>
+     *   <li>千问AI平台：{@code sk-ws-H.xxxx.yyyy.zbase64sign}，可长达 100+ 字符，含点号</li>
+     *   <li>OpenAI：{@code sk-proj-...}，可含连字符</li>
+     *   <li>本地 Ollama：任意字符串（常为 {@code ollama}）</li>
+     * </ul>
+     *
+     * <p>因此校验规则为：非空、不含空白、不含中文、长度 ≥ 8。
+     * 真正的有效性由服务端返回的 401 判定，页面会据此自动降级。</p>
      */
     private static String resolveApiKey(Properties props) {
         String key = System.getenv(ENV_API_KEY);
@@ -152,26 +171,43 @@ public final class AgentConfig {
         if (isBlank(key)) {
             return null;
         }
-        key = key.trim();
+        // 去掉可能从网页复制带上的引号与空白
+        key = key.trim().replaceAll("^[\"']|[\"']$", "").trim();
+        if (key.isEmpty()) {
+            return null;
+        }
 
-        // 排除模板占位值
-        if (key.startsWith("在这里") || key.contains("your-api-key")
-                || key.equals("sk-xxx") || key.equals("sk-xxxxxxxxxxxxxxxx")) {
+        // 1) 排除模板里的说明文字 / 占位值
+        String lower = key.toLowerCase();
+        if (key.startsWith("在这里") || lower.contains("your-api-key")
+                || lower.contains("your_api_key")
+                || lower.equals("sk-xxx") || lower.equals("sk-xxxxxxxxxxxxxxxx")
+                || lower.equals("none") || lower.equals("null")) {
             System.out.println("[AgentConfig] 检测到模板占位值，视为未配置 API Key");
             return null;
         }
 
-        // 格式预检：DeepSeek Key 必须以 sk- 开头，长度在合理区间
-        if (!key.startsWith("sk-")) {
-            System.out.println("[AgentConfig] API Key 格式不正确（应以 sk- 开头），视为未配置。" +
-                    "当前值长度=" + key.length());
+        // 2) 含中文 → 一定是说明文字
+        for (int i = 0; i < key.length(); i++) {
+            if (key.charAt(i) > 0x4E00 && key.charAt(i) < 0x9FFF) {
+                System.out.println("[AgentConfig] API Key 含中文字符，视为未配置");
+                return null;
+            }
+        }
+
+        // 3) 含空白 → 复制时带了换行或空格
+        if (key.matches(".*\\s.*")) {
+            System.out.println("[AgentConfig] API Key 含空白字符，请检查是否复制时多了空格或换行");
             return null;
         }
-        if (key.length() < 20 || key.length() > 80) {
-            System.out.println("[AgentConfig] API Key 长度异常（" + key.length() +
-                    "），DeepSeek Key 通常为 35 字符左右，视为未配置");
+
+        // 4) 长度下限：过短的值不可能有效
+        //    门槛设得很低（4 字符），因为本地部署（Ollama 等）常用 "ollama" 这类短占位值
+        if (key.length() < 4) {
+            System.out.println("[AgentConfig] API Key 过短（" + key.length() + " 字符），视为未配置");
             return null;
         }
+
         return key;
     }
 
@@ -222,11 +258,34 @@ public final class AgentConfig {
         return baseUrl;
     }
 
-    /** 拼接完整接口地址，例如 https://api.deepseek.com/chat/completions */
+    /**
+     * 拼接完整的 Chat Completions 接口地址。
+     *
+     * <p>兼容各种 base URL 写法（OpenAI 兼容协议统一在末尾拼 {@code /chat/completions}）：</p>
+     * <table border="1">
+     *   <tr><th>agent.base.url 配置</th><th>实际请求地址</th></tr>
+     *   <tr><td>{@code https://api.deepseek.com}</td>
+     *       <td>{@code https://api.deepseek.com/chat/completions}</td></tr>
+     *   <tr><td>{@code https://api.deepseek.com/v1}</td>
+     *       <td>{@code https://api.deepseek.com/v1/chat/completions}</td></tr>
+     *   <tr><td>{@code https://maas.qianwenai.com/compatible-mode/v1}</td>
+     *       <td>{@code https://maas.qianwenai.com/compatible-mode/v1/chat/completions}</td></tr>
+     *   <tr><td>{@code http://localhost:11434/v1}</td>
+     *       <td>{@code http://localhost:11434/v1/chat/completions}</td></tr>
+     * </table>
+     *
+     * <p>若用户误把完整地址写进了 base url（已含 {@code /chat/completions}），
+     * 不会重复拼接。</p>
+     */
     public String getChatCompletionsUrl() {
-        String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        if (base.endsWith("/v1")) {
-            return base + "/chat/completions";
+        String base = baseUrl == null ? "" : baseUrl.trim();
+        // 去掉结尾多余的斜杠
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        // 用户可能已经写全了，避免重复拼接
+        if (base.endsWith("/chat/completions")) {
+            return base;
         }
         return base + "/chat/completions";
     }
