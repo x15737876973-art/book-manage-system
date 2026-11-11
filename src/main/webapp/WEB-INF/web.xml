@@ -4,15 +4,19 @@
          xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee
          http://xmlns.jcp.org/xml/ns/javaee/web-app_3_1.xsd"
          version="3.1">
-  
+
   <display-name>图书管理系统</display-name>
-  
-  <!-- 欢迎页面 -->
+
+  <!-- ==================================================================
+       欢迎页面
+       ================================================================== -->
   <welcome-file-list>
     <welcome-file>index.jsp</welcome-file>
   </welcome-file-list>
-  
-  <!-- 字符编码过滤器 -->
+
+  <!-- ==================================================================
+       字符编码过滤器：统一 UTF-8，解决中文乱码
+       ================================================================== -->
   <filter>
     <filter-name>encodingFilter</filter-name>
     <filter-class>com.book.filter.EncodingFilter</filter-class>
@@ -25,8 +29,14 @@
     <filter-name>encodingFilter</filter-name>
     <url-pattern>/*</url-pattern>
   </filter-mapping>
-  
-  <!-- 登录检查过滤器 -->
+
+  <!-- ==================================================================
+       登录与角色校验过滤器
+       规则见 LoginCheckFilter 注释：
+         /admin/** 及初始化类接口 → 仅 admin
+         /reader/**               → 仅 reader
+         login/register/agent 等  → 公开
+       ================================================================== -->
   <filter>
     <filter-name>loginCheckFilter</filter-name>
     <filter-class>com.book.filter.LoginCheckFilter</filter-class>
@@ -35,10 +45,51 @@
     <filter-name>loginCheckFilter</filter-name>
     <url-pattern>/*</url-pattern>
   </filter-mapping>
-  
-  <!-- Session超时设置(分钟) -->
+
+  <!-- ==================================================================
+       会话配置
+       ================================================================== -->
   <session-config>
     <session-timeout>30</session-timeout>
+    <cookie-config>
+      <!-- 防止 JS 读取会话 Cookie，降低 XSS 窃取会话的风险 -->
+      <http-only>true</http-only>
+    </cookie-config>
+    <tracking-mode>COOKIE</tracking-mode>
   </session-config>
-  
+
+  <!-- ==================================================================
+       统一错误页配置
+       ------------------------------------------------------------------
+       目的：任何未捕获异常或错误状态码，都被导向友好的错误页面，
+       不把 Java 堆栈直接打印到浏览器。
+
+         error.jsp 中通过 ${requestScope.error} 展示友好提示，
+         详细堆栈只写入服务器日志（getServletContext().log）。
+       ================================================================== -->
+  <error-page>
+    <error-code>400</error-code>
+    <location>/error.jsp</location>
+  </error-page>
+  <error-page>
+    <error-code>403</error-code>
+    <location>/error.jsp</location>
+  </error-page>
+  <error-page>
+    <error-code>404</error-code>
+    <location>/error.jsp</location>
+  </error-page>
+  <error-page>
+    <error-code>405</error-code>
+    <location>/error.jsp</location>
+  </error-page>
+  <error-page>
+    <error-code>500</error-code>
+    <location>/error.jsp</location>
+  </error-page>
+  <error-page>
+    <exception-type>java.lang.Throwable</exception-type>
+    <location>/error.jsp</location>
+  </error-page>
+
 </web-app>

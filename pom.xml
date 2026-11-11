@@ -42,6 +42,15 @@
             <artifactId>mysql-connector-java</artifactId>
             <version>8.0.33</version>
         </dependency>
+
+        <!-- BCrypt 密码加密：jBCrypt 是 BCrypt 算法的官方 Java 参考实现，
+             与 Spring Security / OpenBSD bcrypt 完全兼容。
+             密码学算法请使用成熟实现，不要自己手写。 -->
+        <dependency>
+            <groupId>org.mindrot</groupId>
+            <artifactId>jbcrypt</artifactId>
+            <version>0.4</version>
+        </dependency>
     </dependencies>
 
     <build>

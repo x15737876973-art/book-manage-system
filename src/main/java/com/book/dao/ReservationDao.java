@@ -3,267 +3,113 @@ package com.book.dao;
 import com.book.entity.Reservation;
 import com.book.util.DBUtil;
 
-import java.sql.*;
-import java.util.ArrayList;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 
 /**
- * 预约记录数据访问层
+ * 预约记录数据访问层。
+ *
+ * <p>所有 SQL 使用 PreparedStatement 预编译，资源由 try-with-resources 自动释放。</p>
  */
 public class ReservationDao {
-    
-    /**
-     * 添加预约
-     */
+
+    private static final String BASE_SELECT =
+            "SELECT r.*, u.username, b.bname "
+                    + "FROM reservations r "
+                    + "LEFT JOIN users u ON r.user_id = u.id "
+                    + "LEFT JOIN books b ON r.book_id = b.id ";
+
+    // ======================================================================
+    // 写入
+    // ======================================================================
+
+    /** 新增预约 */
     public int add(Reservation reservation) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        int row = 0;
-        String sql = "INSERT INTO reservations(user_id, book_id, status) VALUES(?,?,?)";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, reservation.getUserId());
-            pstmt.setInt(2, reservation.getBookId());
-            pstmt.setString(3, reservation.getStatus() != null ? reservation.getStatus() : "waiting");
-            row = pstmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt);
-        }
-        return row;
+        return DBUtil.update("INSERT INTO reservations(user_id, book_id, status) VALUES(?,?,?)",
+                ps -> {
+                    ps.setInt(1, reservation.getUserId());
+                    ps.setInt(2, reservation.getBookId());
+                    ps.setString(3, reservation.getStatus() != null ? reservation.getStatus() : "waiting");
+                });
     }
-    
-    /**
-     * 取消预约
-     */
+
+    /** 取消预约 */
     public int cancel(Integer id) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        int row = 0;
-        String sql = "UPDATE reservations SET status='cancelled' WHERE id=?";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, id);
-            row = pstmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt);
-        }
-        return row;
+        return DBUtil.update("UPDATE reservations SET status='cancelled' WHERE id = ?", ps -> ps.setInt(1, id));
     }
-    
-    /**
-     * 完成预约
-     */
+
+    /** 完成预约（借到书后调用） */
     public int complete(Integer id) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        int row = 0;
-        String sql = "UPDATE reservations SET status='completed' WHERE id=?";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, id);
-            row = pstmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt);
-        }
-        return row;
+        return DBUtil.update("UPDATE reservations SET status='completed' WHERE id = ?", ps -> ps.setInt(1, id));
     }
-    
-    /**
-     * 通知预约
-     */
+
+    /** 通知预约（书可借时调用） */
     public int notify(Integer id) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        int row = 0;
-        String sql = "UPDATE reservations SET status='notified' WHERE id=?";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, id);
-            row = pstmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt);
-        }
-        return row;
+        return DBUtil.update("UPDATE reservations SET status='notified' WHERE id = ?", ps -> ps.setInt(1, id));
     }
-    
-    /**
-     * 根据ID查询预约
-     */
+
+    // ======================================================================
+    // 查询
+    // ======================================================================
+
+    /** 根据 id 查询预约 */
     public Reservation findById(Integer id) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        Reservation reservation = null;
-        String sql = "SELECT r.*, u.username, b.bname FROM reservations r " +
-                     "LEFT JOIN users u ON r.user_id = u.id " +
-                     "LEFT JOIN books b ON r.book_id = b.id WHERE r.id=?";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, id);
-            rs = pstmt.executeQuery();
-            if (rs.next()) {
-                reservation = mapResultSetToReservation(rs);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt, rs);
+        if (id == null) {
+            return null;
         }
-        return reservation;
+        List<Reservation> list = DBUtil.query(BASE_SELECT + "WHERE r.id = ?", ps -> ps.setInt(1, id), this::mapRow);
+        return list.isEmpty() ? null : list.get(0);
     }
-    
-    /**
-     * 查询所有预约
-     */
+
+    /** 查询所有预约 */
     public List<Reservation> findAll() {
-        List<Reservation> list = new ArrayList<>();
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        String sql = "SELECT r.*, u.username, b.bname FROM reservations r " +
-                     "LEFT JOIN users u ON r.user_id = u.id " +
-                     "LEFT JOIN books b ON r.book_id = b.id ORDER BY r.id DESC";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            rs = pstmt.executeQuery();
-            while (rs.next()) {
-                list.add(mapResultSetToReservation(rs));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt, rs);
-        }
-        return list;
+        return DBUtil.query(BASE_SELECT + "ORDER BY r.id DESC", null, this::mapRow);
     }
-    
-    /**
-     * 根据用户ID查询预约
-     */
+
+    /** 查询某用户的全部预约 */
     public List<Reservation> findByUserId(Integer userId) {
-        List<Reservation> list = new ArrayList<>();
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        String sql = "SELECT r.*, u.username, b.bname FROM reservations r " +
-                     "LEFT JOIN users u ON r.user_id = u.id " +
-                     "LEFT JOIN books b ON r.book_id = b.id WHERE r.user_id=? ORDER BY r.id DESC";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, userId);
-            rs = pstmt.executeQuery();
-            while (rs.next()) {
-                list.add(mapResultSetToReservation(rs));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt, rs);
-        }
-        return list;
+        return DBUtil.query(BASE_SELECT + "WHERE r.user_id = ? ORDER BY r.id DESC",
+                ps -> ps.setInt(1, userId), this::mapRow);
     }
-    
-    /**
-     * 查询用户对某书的等待中预约
-     */
+
+    /** 查询用户对某书"等待中"的预约 */
     public Reservation findWaitingByUserAndBook(Integer userId, Integer bookId) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        Reservation reservation = null;
-        String sql = "SELECT r.*, u.username, b.bname FROM reservations r " +
-                     "LEFT JOIN users u ON r.user_id = u.id " +
-                     "LEFT JOIN books b ON r.book_id = b.id WHERE r.user_id=? AND r.book_id=? AND r.status='waiting'";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, userId);
-            pstmt.setInt(2, bookId);
-            rs = pstmt.executeQuery();
-            if (rs.next()) {
-                reservation = mapResultSetToReservation(rs);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt, rs);
-        }
-        return reservation;
+        List<Reservation> list = DBUtil.query(
+                BASE_SELECT + "WHERE r.user_id = ? AND r.book_id = ? AND r.status = 'waiting'",
+                ps -> {
+                    ps.setInt(1, userId);
+                    ps.setInt(2, bookId);
+                }, this::mapRow);
+        return list.isEmpty() ? null : list.get(0);
     }
-    
-    /**
-     * 查询某书的等待中预约列表
-     */
+
+    /** 查询某书的所有"等待中"预约（按先后顺序） */
     public List<Reservation> findWaitingByBook(Integer bookId) {
-        List<Reservation> list = new ArrayList<>();
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        String sql = "SELECT r.*, u.username, b.bname FROM reservations r " +
-                     "LEFT JOIN users u ON r.user_id = u.id " +
-                     "LEFT JOIN books b ON r.book_id = b.id WHERE r.book_id=? AND r.status='waiting' ORDER BY r.id ASC";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, bookId);
-            rs = pstmt.executeQuery();
-            while (rs.next()) {
-                list.add(mapResultSetToReservation(rs));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt, rs);
-        }
-        return list;
+        return DBUtil.query(BASE_SELECT + "WHERE r.book_id = ? AND r.status = 'waiting' ORDER BY r.id ASC",
+                ps -> ps.setInt(1, bookId), this::mapRow);
     }
-    
-    /**
-     * 查询用户的有效预约（等待中或已通知）
-     */
+
+    /** 查询用户的有效预约（等待中或已通知） */
     public List<Reservation> findActiveByUserId(Integer userId) {
-        List<Reservation> list = new ArrayList<>();
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        String sql = "SELECT r.*, u.username, b.bname FROM reservations r " +
-                     "LEFT JOIN users u ON r.user_id = u.id " +
-                     "LEFT JOIN books b ON r.book_id = b.id WHERE r.user_id=? AND r.status IN ('waiting', 'notified') ORDER BY r.id DESC";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, userId);
-            rs = pstmt.executeQuery();
-            while (rs.next()) {
-                list.add(mapResultSetToReservation(rs));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt, rs);
-        }
-        return list;
+        return DBUtil.query(
+                BASE_SELECT + "WHERE r.user_id = ? AND r.status IN ('waiting','notified') ORDER BY r.id DESC",
+                ps -> ps.setInt(1, userId), this::mapRow);
     }
-    
-    /**
-     * 结果集映射到对象
-     */
-    private Reservation mapResultSetToReservation(ResultSet rs) throws SQLException {
+
+    /** 统计用户等待中的预约数量 */
+    public int countWaitingByUserId(Integer userId) {
+        return (int) DBUtil.queryLong(
+                "SELECT COUNT(*) FROM reservations WHERE user_id = ? AND status = 'waiting'",
+                ps -> ps.setInt(1, userId));
+    }
+
+    // ======================================================================
+    // 内部工具
+    // ======================================================================
+
+    /** 结果集 → Reservation 实体 */
+    private Reservation mapRow(ResultSet rs) throws SQLException {
         Reservation reservation = new Reservation();
         reservation.setId(rs.getInt("id"));
         reservation.setUserId(rs.getInt("user_id"));
@@ -273,30 +119,5 @@ public class ReservationDao {
         reservation.setUsername(rs.getString("username"));
         reservation.setBookName(rs.getString("bname"));
         return reservation;
-    }
-    
-    /**
-     * 统计用户等待中的预约数量
-     */
-    public int countWaitingByUserId(Integer userId) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        int count = 0;
-        String sql = "SELECT COUNT(*) FROM reservations WHERE user_id=? AND status='waiting'";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, userId);
-            rs = pstmt.executeQuery();
-            if (rs.next()) {
-                count = rs.getInt(1);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt, rs);
-        }
-        return count;
     }
 }

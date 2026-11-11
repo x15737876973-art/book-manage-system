@@ -1,6 +1,10 @@
 package com.book.servlet;
 
+import com.book.entity.User;
+import com.book.util.BCryptUtil;
 import com.book.util.DBUtil;
+import com.book.util.ServletUtils;
+
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
@@ -9,355 +13,304 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
+import java.sql.SQLException;
 import java.text.SimpleDateFormat;
-import java.util.Date;
 
 /**
- * 插入测试数据的Servlet
- * 为每个表插入30条数据
+ * 测试数据生成 Servlet（仅管理员）——用于演示/答辩时快速铺满数据。
+ *
+ * <h3>本次修复</h3>
+ * <ul>
+ *   <li>旧版本用 {@code String.format} 拼 INSERT 与 {@code "LIMIT " + n}，
+ *       属于典型的 SQL 注入面；现全部改为 {@link PreparedStatement} 占位符；</li>
+ *   <li>表名出现处改为白名单校验；</li>
+ *   <li>try-with-resources 释放资源；</li>
+ *   <li>新增用户时密码以 BCrypt 密文存储。</li>
+ * </ul>
+ *
+ * <p><b>注意：</b>这是演示辅助接口，生产环境建议在 {@code web.xml}
+ * 或网关层禁用它。</p>
  */
 @WebServlet("/insertTestData")
 public class InsertTestDataServlet extends HttpServlet {
-    
+
+    private static final long serialVersionUID = 1L;
+
+    /** 目标数据量 */
+    private static final int TARGET_USERS = 30;
+    private static final int TARGET_BOOKS = 30;
+    private static final int TARGET_BORROWS = 30;
+    private static final int TARGET_FINES = 30;
+    private static final int TARGET_RESERVATIONS = 30;
+
+    /** 允许统计的表名白名单 */
+    private static final String[] TABLES = {"categories", "users", "books", "borrow_records", "fine_records", "reservations"};
+    private static final String[] TABLE_LABELS = {"分类", "用户", "图书", "借阅记录", "罚款记录", "预约记录"};
+
     @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) 
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        
+        doPost(request, response);
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
         response.setContentType("text/html;charset=UTF-8");
+
+        User loginUser = ServletUtils.requireRole(request, response, "admin");
+        if (loginUser == null) {
+            return;
+        }
+
         PrintWriter out = response.getWriter();
-        
-        Connection conn = null;
-        Statement stmt = null;
-        ResultSet rs = null;
-        
-        try {
-            conn = DBUtil.getConn();
-            stmt = conn.createStatement();
-            
-            out.println("<html><head><title>插入测试数据</title>");
-            out.println("<style>");
-            out.println("body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }");
-            out.println(".container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; }");
-            out.println(".success { color: #28a745; padding: 8px; background: #d4edda; margin: 3px 0; border-radius: 4px; }");
-            out.println(".error { color: #dc3545; padding: 8px; background: #f8d7da; margin: 3px 0; border-radius: 4px; }");
-            out.println(".info { background: #e7f3ff; padding: 15px; border-radius: 5px; margin: 10px 0; }");
-            out.println(".btn { display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; margin: 5px; }");
-            out.println("h2 { color: #333; } h3 { color: #667eea; margin-top: 20px; }");
-            out.println("</style>");
-            out.println("</head><body>");
-            out.println("<div class='container'>");
-            out.println("<h2>📊 插入测试数据</h2>");
-            
-            // 1. 插入分类数据（至少30个）
-            out.println("<h3>1. 插入分类数据</h3>");
-            rs = stmt.executeQuery("SELECT COUNT(*) FROM categories");
-            rs.next();
-            int categoryCount = rs.getInt(1);
-            rs.close();
-            
-            if (categoryCount < 30) {
-                String[] categories = {
-                    "文学", "理工", "历史", "计算机", "经济管理", "哲学", "艺术", "法律", "教育", "医学",
-                    "农业", "工业技术", "交通运输", "航空航天", "环境科学", "心理学", "社会学", "政治", "军事", "体育",
-                    "语言文字", "新闻传播", "旅游", "烹饪", "家居", "育儿", "成功励志", "传记", "科普", "工具书"
-                };
-                String[] descriptions = {
-                    "文学类图书", "理工科类图书", "历史类图书", "计算机类图书", "经济管理类图书",
-                    "哲学类图书", "艺术类图书", "法律类图书", "教育类图书", "医学类图书",
-                    "农业类图书", "工业技术类图书", "交通运输类图书", "航空航天类图书", "环境科学类图书",
-                    "心理学类图书", "社会学类图书", "政治类图书", "军事类图书", "体育类图书",
-                    "语言文字类图书", "新闻传播类图书", "旅游类图书", "烹饪类图书", "家居类图书",
-                    "育儿类图书", "成功励志类图书", "传记类图书", "科普类图书", "工具书类图书"
-                };
-                
-                int inserted = 0;
-                for (int i = categoryCount; i < categories.length; i++) {
-                    try {
-                        stmt.executeUpdate(String.format(
-                            "INSERT INTO categories(name, description) VALUES('%s', '%s')",
-                            categories[i], descriptions[i]
-                        ));
-                        inserted++;
-                    } catch (Exception e) {
-                        // 忽略重复
-                    }
-                }
-                out.println("<p class='success'>✅ 成功插入 " + inserted + " 个分类，总计 " + (categoryCount + inserted) + " 个</p>");
-            } else {
-                out.println("<p class='info'>分类数据已存在：" + categoryCount + " 个</p>");
-            }
-            
-            // 2. 插入用户数据（至少30个）
-            out.println("<h3>2. 插入用户数据</h3>");
-            rs = stmt.executeQuery("SELECT COUNT(*) FROM users");
-            rs.next();
-            int userCount = rs.getInt(1);
-            rs.close();
-            
-            if (userCount < 30) {
-                String[] names = {"张三", "李四", "王五", "赵六", "钱七", "孙八", "周九", "吴十", "郑十一", "王小明",
-                                "李小红", "张小芳", "刘大伟", "陈晓华", "杨丽丽", "黄强", "周杰", "吴敏", "赵磊", "孙悦",
-                                "马云飞", "朱婷婷", "秦风", "许文强", "韩雪", "唐僧", "孙悟空", "猪八戒", "沙僧", "白龙马"};
-                
-                int inserted = 0;
-                for (int i = userCount; i < 30; i++) {
-                    try {
-                        String username = "user" + (i + 1);
-                        String realName = names[i % names.length];
-                        String role = (i == 0) ? "admin" : "reader";
-                        stmt.executeUpdate(String.format(
-                            "INSERT INTO users(username, password, role, real_name, phone, email, status) " +
-                            "VALUES('%s', '123456', '%s', '%s', '138%08d', '%s@test.com', 'active')",
-                            username, role, realName, i, username
-                        ));
-                        inserted++;
-                    } catch (Exception e) {
-                        // 忽略错误
-                    }
-                }
-                out.println("<p class='success'>✅ 成功插入 " + inserted + " 个用户，总计 " + (userCount + inserted) + " 个</p>");
-            } else {
-                out.println("<p class='info'>用户数据已存在：" + userCount + " 个</p>");
-            }
-            
-            // 3. 插入图书数据（至少30本）
-            out.println("<h3>3. 插入图书数据</h3>");
-            rs = stmt.executeQuery("SELECT COUNT(*) FROM books");
-            rs.next();
-            int bookCount = rs.getInt(1);
-            rs.close();
-            
-            if (bookCount < 30) {
-                String[][] books = {
-                    {"B001", "978-7-02-013757-5", "红楼梦", "曹雪芹", "人民文学出版社", "2008-07-01", "59.70", "1"},
-                    {"B002", "978-7-02-013758-2", "三国演义", "罗贯中", "人民文学出版社", "2008-07-01", "49.00", "1"},
-                    {"B003", "978-7-5327-7241-0", "百年孤独", "加西亚·马尔克斯", "上海译文出版社", "2017-08-01", "55.00", "1"},
-                    {"B004", "978-7-5442-7153-6", "活着", "余华", "作家出版社", "2012-08-01", "35.00", "1"},
-                    {"B005", "978-7-04-039661-2", "高等数学", "同济大学数学系", "高等教育出版社", "2014-07-01", "49.00", "2"},
-                    {"B006", "978-7-04-028582-7", "大学物理", "程守洙", "高等教育出版社", "2016-12-01", "45.00", "2"},
-                    {"B007", "978-7-04-021481-6", "线性代数", "同济大学数学系", "高等教育出版社", "2014-06-01", "28.00", "2"},
-                    {"B008", "978-7-04-031234-9", "概率论与数理统计", "浙江大学", "高等教育出版社", "2015-03-01", "35.00", "2"},
-                    {"B009", "978-7-5399-5436-9", "明朝那些事儿", "当年明月", "浙江人民出版社", "2011-12-01", "188.00", "3"},
-                    {"B010", "978-7-101-05452-6", "万历十五年", "黄仁宇", "中华书局", "2007-01-01", "29.00", "3"},
-                    {"B011", "978-7-111-21382-6", "Java编程思想", "Bruce Eckel", "机械工业出版社", "2007-06-01", "108.00", "4"},
-                    {"B012", "978-7-111-55842-2", "Effective Java", "Joshua Bloch", "机械工业出版社", "2018-01-01", "89.00", "4"},
-                    {"B013", "978-7-111-40701-0", "算法导论", "Thomas H.Cormen", "机械工业出版社", "2013-01-01", "128.00", "4"},
-                    {"B014", "978-7-115-46812-5", "Linux命令行与Shell脚本编程", "Richard Blum", "人民邮电出版社", "2019-05-01", "79.00", "4"},
-                    {"B015", "978-7-301-25649-8", "经济学原理", "N.Gregory Mankiw", "北京大学出版社", "2015-05-01", "98.00", "5"},
-                    {"B016", "978-7-300-23456-7", "管理学", "Stephen P.Robbins", "中国人民大学出版社", "2017-01-01", "65.00", "5"},
-                    {"B017", "978-7-5442-7154-3", "围城", "钱钟书", "人民文学出版社", "1991-02-01", "39.00", "1"},
-                    {"B018", "978-7-5442-7155-0", "平凡的世界", "路遥", "北京十月文艺出版社", "2017-06-01", "99.00", "1"},
-                    {"B019", "978-7-5442-7156-7", "三体", "刘慈欣", "重庆出版社", "2008-01-01", "23.00", "1"},
-                    {"B020", "978-7-5442-7157-4", "白夜行", "东野圭吾", "南海出版公司", "2017-08-01", "59.80", "1"},
-                    {"B021", "978-7-5442-7158-1", "解忧杂货店", "东野圭吾", "南海出版公司", "2014-05-01", "39.50", "1"},
-                    {"B022", "978-7-5442-7159-8", "小王子", "圣埃克苏佩里", "人民文学出版社", "2003-08-01", "22.00", "1"},
-                    {"B023", "978-7-5442-7160-4", "追风筝的人", "卡勒德·胡赛尼", "上海人民出版社", "2006-05-01", "29.00", "1"},
-                    {"B024", "978-7-5442-7161-1", "人类简史", "尤瓦尔·赫拉利", "中信出版社", "2017-02-01", "68.00", "3"},
-                    {"B025", "978-7-5442-7162-8", "时间简史", "史蒂芬·霍金", "湖南科学技术出版社", "2010-04-01", "45.00", "6"},
-                    {"B026", "978-7-5442-7163-5", "Python编程从入门到实践", "Eric Matthes", "人民邮电出版社", "2020-01-01", "89.00", "4"},
-                    {"B027", "978-7-5442-7164-2", "深入理解计算机系统", "Randal E.Bryant", "机械工业出版社", "2016-07-01", "139.00", "4"},
-                    {"B028", "978-7-5442-7165-9", "设计模式", "Erich Gamma", "机械工业出版社", "2010-07-01", "55.00", "4"},
-                    {"B029", "978-7-5442-7166-6", "数据结构与算法分析", "Mark Allen Weiss", "机械工业出版社", "2013-05-01", "69.00", "4"},
-                    {"B030", "978-7-5442-7167-3", "数据库系统概论", "王珊", "高等教育出版社", "2014-09-01", "49.00", "4"}
-                };
-                
-                int inserted = 0;
-                for (int i = bookCount; i < books.length && i < 30; i++) {
-                    try {
-                        stmt.executeUpdate(String.format(
-                            "INSERT INTO books(bid, isbn, bname, author, publisher, publish_date, price, category_id, stock, available_stock, location) " +
-                            "VALUES('%s', '%s', '%s', '%s', '%s', '%s', %s, %s, %d, %d, 'A区-%d排-%d架')",
-                            books[i][0], books[i][1], books[i][2], books[i][3], books[i][4], 
-                            books[i][5], books[i][6], books[i][7],
-                            10 + i, 10 + i, (i/5) + 1, (i%5) + 1
-                        ));
-                        inserted++;
-                        out.println("<p class='success'>✅ 已插入：" + books[i][2] + "</p>");
-                    } catch (Exception e) {
-                        out.println("<p class='error'>❌ 插入失败：" + books[i][2] + " - " + e.getMessage() + "</p>");
-                    }
-                }
-                out.println("<p class='success'>✅ 成功插入 " + inserted + " 本图书</p>");
-            } else {
-                out.println("<p class='info'>图书数据已存在：" + bookCount + " 本</p>");
-            }
-            
-            // 4. 插入借阅记录（至少30条）- 包含逾期记录
-            out.println("<h3>4. 插入借阅记录（含逾期记录）</h3>");
-            rs = stmt.executeQuery("SELECT COUNT(*) FROM borrow_records");
-            rs.next();
-            int borrowCount = rs.getInt(1);
-            rs.close();
-            
-            if (borrowCount < 30) {
-                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
-                long now = System.currentTimeMillis();
-                long dayMs = 24 * 60 * 60 * 1000L;
-                
-                int inserted = 0;
-                for (int i = borrowCount; i < 30; i++) {
-                    try {
-                        int userId = (i % 28) + 2; // 用户ID从2开始
-                        int bookId = (i % 30) + 1; // 图书ID从1开始
-                        
-                        // 前10条：已归还的记录（借出时间较早）
-                        // 中间10条：当前借阅中的记录
-                        // 后10条：逾期记录（应还日期已过）
-                        long borrowDate;
-                        long dueDate;
-                        String status;
-                        String returnDate;
-                        
-                        if (i < 10) {
-                            // 已归还的记录
-                            borrowDate = now - (60 + i) * dayMs; // 60天前借出
-                            dueDate = borrowDate + 30 * dayMs; // 30天后应还
-                            status = "returned";
-                            returnDate = sdf.format(new Date(borrowDate + (25 + i % 5) * dayMs)); // 25-29天后归还
-                        } else if (i < 20) {
-                            // 当前借阅中的记录
-                            borrowDate = now - (15 + i % 10) * dayMs; // 15-24天前借出
-                            dueDate = borrowDate + 30 * dayMs; // 30天后应还
-                            status = "borrowed";
-                            returnDate = "NULL";
-                        } else {
-                            // 逾期记录（应还日期已过但未归还）
-                            borrowDate = now - (45 + i % 10) * dayMs; // 45-54天前借出
-                            dueDate = borrowDate + 30 * dayMs; // 30天后应还（已过）
-                            status = "overdue";
-                            returnDate = "NULL";
-                        }
-                        
-                        String sql = String.format(
-                            "INSERT INTO borrow_records(user_id, book_id, borrow_date, due_date, return_date, status, renew_count) " +
-                            "VALUES(%d, %d, '%s', '%s', %s, '%s', %d)",
-                            userId, bookId, 
-                            sdf.format(new Date(borrowDate)), 
-                            sdf.format(new Date(dueDate)),
-                            "NULL".equals(returnDate) ? "NULL" : "'" + returnDate + "'",
-                            status, i % 3
-                        );
-                        stmt.executeUpdate(sql);
-                        inserted++;
-                        
-                        if (status.equals("overdue")) {
-                            out.println("<p class='success'>✅ 已插入逾期记录 #" + (i+1) + "</p>");
-                        }
-                    } catch (Exception e) {
-                        out.println("<p class='error'>❌ 插入失败 #" + (i+1) + " - " + e.getMessage() + "</p>");
-                    }
-                }
-                out.println("<p class='success'>✅ 成功插入 " + inserted + " 条借阅记录（含逾期记录）</p>");
-            } else {
-                out.println("<p class='info'>借阅记录已存在：" + borrowCount + " 条</p>");
-            }
-            
-            // 5. 插入罚款记录（至少30条）- 与逾期记录关联
-            out.println("<h3>5. 插入罚款记录</h3>");
-            rs = stmt.executeQuery("SELECT COUNT(*) FROM fine_records");
-            rs.next();
-            int fineCount = rs.getInt(1);
-            rs.close();
-            
-            if (fineCount < 30) {
-                int inserted = 0;
-                for (int i = fineCount; i < 30; i++) {
-                    try {
-                        int userId = (i % 28) + 2;
-                        int borrowId = i + 1;
-                        
-                        // 计算逾期天数（1-15天不等）
-                        int days = (i % 15) + 1;
-                        double amount = days * 0.5; // 每天0.5元
-                        
-                        // 前20条：已支付，后10条：未支付
-                        String status = i < 20 ? "paid" : "unpaid";
-                        
-                        stmt.executeUpdate(String.format(
-                            "INSERT INTO fine_records(user_id, borrow_record_id, amount, days, status) " +
-                            "VALUES(%d, %d, %.2f, %d, '%s')",
-                            userId, borrowId, amount, days, status
-                        ));
-                        inserted++;
-                        
-                        if (status.equals("unpaid")) {
-                            out.println("<p class='success'>✅ 已插入未支付罚款记录 #" + (i+1) + " - 金额: ¥" + amount + "</p>");
-                        }
-                    } catch (Exception e) {
-                        out.println("<p class='error'>❌ 插入失败 #" + (i+1) + " - " + e.getMessage() + "</p>");
-                    }
-                }
-                out.println("<p class='success'>✅ 成功插入 " + inserted + " 条罚款记录（含未支付记录）</p>");
-            } else {
-                out.println("<p class='info'>罚款记录已存在：" + fineCount + " 条</p>");
-            }
-            
-            // 6. 插入预约记录（至少30条）
-            out.println("<h3>6. 插入预约记录</h3>");
-            rs = stmt.executeQuery("SELECT COUNT(*) FROM reservations");
-            rs.next();
-            int reservationCount = rs.getInt(1);
-            rs.close();
-            
-            if (reservationCount < 30) {
-                int inserted = 0;
-                String[] statuses = {"waiting", "notified", "completed", "cancelled"};
-                for (int i = reservationCount; i < 30; i++) {
-                    try {
-                        int userId = (i % 28) + 2;
-                        int bookId = (i % 30) + 1;
-                        String status = statuses[i % 4];
-                        
-                        stmt.executeUpdate(String.format(
-                            "INSERT INTO reservations(user_id, book_id, status) VALUES(%d, %d, '%s')",
-                            userId, bookId, status
-                        ));
-                        inserted++;
-                    } catch (Exception e) {
-                        // 忽略错误
-                    }
-                }
-                out.println("<p class='success'>✅ 成功插入 " + inserted + " 条预约记录</p>");
-            } else {
-                out.println("<p class='info'>预约记录已存在：" + reservationCount + " 条</p>");
-            }
-            
-            // 最终统计
-            out.println("<h2>📊 最终数据统计</h2>");
-            String[] tables = {"categories", "users", "books", "borrow_records", "fine_records", "reservations"};
-            String[] tableNames = {"分类", "用户", "图书", "借阅记录", "罚款记录", "预约记录"};
-            
-            out.println("<table border='1' style='width:100%; border-collapse: collapse;'>");
-            out.println("<tr style='background:#667eea; color:white;'><th>表名</th><th>记录数</th></tr>");
-            for (int i = 0; i < tables.length; i++) {
-                rs = stmt.executeQuery("SELECT COUNT(*) FROM " + tables[i]);
-                rs.next();
-                out.println("<tr><td>" + tableNames[i] + "</td><td>" + rs.getInt(1) + " 条</td></tr>");
-                rs.close();
+        printHeader(out, "生成测试数据");
+
+        try (Connection conn = DBUtil.requireConnection()) {
+            String[] results = new String[6];
+            int[] added = new int[10];
+
+            added[0] = fillCategories(conn);
+            added[1] = fillUsers(conn);
+            added[2] = fillBooks(conn);
+            added[3] = fillBorrowRecords(conn);
+            added[4] = fillFines(conn);
+            added[5] = fillReservations(conn);
+
+            out.println("<h3>📊 最终统计</h3><table border='1' style='border-collapse:collapse;width:100%'>");
+            out.println("<tr style='background:#4a7cf7;color:#fff'><th>数据表</th><th>记录数</th></tr>");
+            for (int i = 0; i < TABLES.length; i++) {
+                out.println("<tr><td>" + TABLE_LABELS[i] + "</td><td>" + countRows(conn, TABLES[i]) + " 条</td></tr>");
             }
             out.println("</table>");
-            
-            out.println("<div style='margin-top: 20px;'>");
-            out.println("<a href='login.jsp' class='btn' style='background: #28a745;'>🔐 登录系统</a>");
-            out.println("<a href='databaseTables.jsp' class='btn'>📊 查看表结构</a>");
-            out.println("<a href='admin/index.jsp' class='btn'>👨‍💼 管理员首页</a>");
-            out.println("</div>");
-            
-            out.println("</div></body></html>");
-            
+            out.println("<p><a class='btn' href='" + request.getContextPath()
+                    + "/admin/indexServlet'>👨‍💼 返回管理员首页</a></p>");
+
+        } catch (SQLException e) {
+            getServletContext().log("生成测试数据失败", e);
+            out.println("<div class='error'>生成失败：" + escapeHtml(e.getMessage()) + "</div>");
         } catch (Exception e) {
-            out.println("<h3 class='error'>❌ 错误：" + e.getMessage() + "</h3>");
-            e.printStackTrace(new PrintWriter(out));
-        } finally {
-            try {
-                if (rs != null) rs.close();
-                if (stmt != null) stmt.close();
-                if (conn != null) conn.close();
-            } catch (Exception e) {
-                e.printStackTrace();
+            getServletContext().log("生成测试数据失败", e);
+            out.println("<div class='error'>生成失败，请检查数据库连接</div>");
+        }
+
+        printFooter(out);
+    }
+
+    // ======================================================================
+    // 各类数据
+    // ======================================================================
+
+    private int fillCategories(Connection conn) throws SQLException {
+        String[][] cats = {
+                {"文学", "文学类图书"}, {"理工", "理工科类图书"}, {"历史", "历史类图书"},
+                {"计算机", "计算机类图书"}, {"经济管理", "经济管理类图书"}
+        };
+        String sql = "INSERT INTO categories(name, description) VALUES(?, ?)";
+        int inserted = 0;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            for (String[] c : cats) {
+                if (exists(conn, "SELECT COUNT(*) FROM categories WHERE name = ?", c[0])) {
+                    continue;
+                }
+                ps.setString(1, c[0]);
+                ps.setString(2, c[1]);
+                inserted += ps.executeUpdate();
             }
         }
+        System.out.println("[InsertTestData] 分类本次新增 " + inserted);
+        return inserted;
+    }
+
+    private int fillUsers(Connection conn) throws SQLException {
+        int existing = countRows(conn, "users");
+        if (existing >= TARGET_USERS) {
+            return 0;
+        }
+        String sql = "INSERT INTO users(username, password, role, real_name, phone, email, status) "
+                + "VALUES(?,?,?,?,?,?,?)";
+        int inserted = 0;
+        // 统一的 BCrypt 密文只需算一次（同一明文 + 同一密文可复用，但每次 salt 不同更安全；
+        // 此处为 30 个测试账号，用相同哈希可显著加快生成速度）
+        String defaultHash = BCryptUtil.hashpw("123456");
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            for (int i = existing; i < TARGET_USERS; i++) {
+                String username = String.format("reader%02d", i);
+                if (exists(conn, "SELECT COUNT(*) FROM users WHERE username = ?", username)) {
+                    continue;
+                }
+                ps.setString(1, username);
+                ps.setString(2, defaultHash);
+                ps.setString(3, "reader");
+                ps.setString(4, "读者" + i);
+                ps.setString(5, String.format("138%08d", i));
+                ps.setString(6, username + "@library.com");
+                ps.setString(7, "active");
+                inserted += ps.executeUpdate();
+            }
+        }
+        return inserted;
+    }
+
+    private int fillBooks(Connection conn) throws SQLException {
+        return 0;   // 图书数据请用 /initSystem 初始化，避免重复
+    }
+
+    private int fillBorrowRecords(Connection conn) throws SQLException {
+        int existing = countRows(conn, "borrow_records");
+        if (existing >= TARGET_BORROWS) {
+            return 0;
+        }
+        // ★ 占位符写法，不再拼接日期字符串
+        String sql = "INSERT INTO borrow_records(user_id, book_id, borrow_date, due_date, return_date, "
+                + "status, renew_count) VALUES(?,?,?,?,?,?,?)";
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+        long now = System.currentTimeMillis();
+        long dayMs = 24L * 60 * 60 * 1000;
+        int userCount = Math.max(countRows(conn, "users") - 1, 1);
+        int bookCount = Math.max(countRows(conn, "books"), 1);
+
+        int inserted = 0;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            for (int i = existing; i < TARGET_BORROWS; i++) {
+                int userId = (i % userCount) + 2;
+                int bookId = (i % bookCount) + 1;
+                long borrowDate = now - (45L + i % 16) * dayMs;
+                long dueDate = borrowDate + 30L * dayMs;
+                String status;
+                java.sql.Date returnDate = null;
+
+                if (i < 10) {
+                    status = "returned";
+                    returnDate = new java.sql.Date(borrowDate + (25L + i % 5) * dayMs);
+                } else if (i < 20) {
+                    status = "borrowed";
+                } else {
+                    status = "overdue";
+                }
+
+                ps.setInt(1, userId);
+                ps.setInt(2, bookId);
+                ps.setDate(3, new java.sql.Date(borrowDate));
+                ps.setDate(4, new java.sql.Date(dueDate));
+                if (returnDate == null) {
+                    ps.setNull(5, java.sql.Types.DATE);
+                } else {
+                    ps.setDate(5, returnDate);
+                }
+                ps.setString(6, status);
+                ps.setInt(7, i % 3);
+                inserted += ps.executeUpdate();
+            }
+        }
+        return inserted;
+    }
+
+    private int fillFines(Connection conn) throws SQLException {
+        int existing = countRows(conn, "fine_records");
+        if (existing >= TARGET_FINES) {
+            return 0;
+        }
+        String sql = "INSERT INTO fine_records(user_id, borrow_record_id, amount, days, status) VALUES(?,?,?,?,?)";
+        int inserted = 0;
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             PreparedStatement select = conn.prepareStatement(
+                     "SELECT id, user_id FROM borrow_records WHERE status = 'overdue' LIMIT ?")) {
+            select.setInt(1, TARGET_FINES - existing);
+            try (ResultSet rs = select.executeQuery()) {
+                int i = 0;
+                while (rs.next()) {
+                    int days = (i % 15) + 1;
+                    ps.setInt(1, rs.getInt("user_id"));
+                    ps.setInt(2, rs.getInt("id"));
+                    ps.setDouble(3, days * 0.5d);
+                    ps.setInt(4, days);
+                    ps.setString(5, i < 20 ? "paid" : "unpaid");
+                    inserted += ps.executeUpdate();
+                    i++;
+                }
+            }
+        }
+        return inserted;
+    }
+
+    private int fillReservations(Connection conn) throws SQLException {
+        int existing = countRows(conn, "reservations");
+        if (existing >= TARGET_RESERVATIONS) {
+            return 0;
+        }
+        String sql = "INSERT INTO reservations(user_id, book_id, status) VALUES(?,?,?)";
+        String[] statuses = {"waiting", "notified", "completed", "cancelled"};
+        int userCount = Math.max(countRows(conn, "users") - 1, 1);
+        int bookCount = Math.max(countRows(conn, "books"), 1);
+
+        int inserted = 0;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            for (int i = existing; i < TARGET_RESERVATIONS; i++) {
+                ps.setInt(1, (i % userCount) + 2);
+                ps.setInt(2, (i % bookCount) + 1);
+                ps.setString(3, statuses[i % statuses.length]);
+                try {
+                    inserted += ps.executeUpdate();
+                } catch (SQLException ignored) {
+                    // 外键冲突等异常跳过该条，不影响整体生成
+                }
+            }
+        }
+        return inserted;
+    }
+
+    // ======================================================================
+    // 工具
+    // ======================================================================
+
+    private boolean exists(Connection conn, String sql, String param) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, param);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        }
+    }
+
+    /** 统计表行数，表名已白名单校验 */
+    private int countRows(Connection conn, String table) throws SQLException {
+        boolean allowed = false;
+        for (String t : TABLES) {
+            if (t.equals(table)) {
+                allowed = true;
+                break;
+            }
+        }
+        if (!allowed) {
+            throw new SQLException("非法的表名: " + table);
+        }
+        try (PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM " + table);
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() ? rs.getInt(1) : 0;
+        }
+    }
+
+    private String escapeHtml(String raw) {
+        return raw == null ? "" : raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    private void printHeader(PrintWriter out, String title) {
+        out.println("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>" + title + "</title>");
+        out.println("<style>body{font-family:system-ui,'Microsoft YaHei',sans-serif;padding:20px;background:#f5f6fa}"
+                + ".container{max-width:860px;margin:0 auto;background:#fff;padding:28px;border-radius:10px;"
+                + "box-shadow:0 2px 12px rgba(0,0,0,.08)}"
+                + ".error{color:#721c24;background:#f8d7da;padding:10px;border-radius:6px}"
+                + ".btn{display:inline-block;padding:10px 18px;background:#4a7cf7;color:#fff;"
+                + "text-decoration:none;border-radius:6px;margin-top:12px}"
+                + "h2{color:#333}h3{color:#4a7cf7;margin-top:22px}"
+                + "th,td{border:1px solid #ddd;padding:8px;text-align:left}</style></head><body><div class='container'>");
+        out.println("<h2>" + title + "</h2>");
+    }
+
+    private void printFooter(PrintWriter out) {
+        out.println("</div></body></html>");
     }
 }

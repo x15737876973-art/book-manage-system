@@ -24,6 +24,7 @@
         <div class="btn-group">
             <a href="login.jsp" class="btn btn-primary">登录</a>
             <a href="register.jsp" class="btn">注册</a>
+            <a href="agent.jsp" class="btn">🤖 智能图书助手</a>
         </div>
     </div>
 </body>

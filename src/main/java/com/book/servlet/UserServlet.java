@@ -2,6 +2,9 @@ package com.book.servlet;
 
 import com.book.dao.UserDao;
 import com.book.entity.User;
+import com.book.util.AppException;
+import com.book.util.BCryptUtil;
+import com.book.util.ServletUtils;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
@@ -13,286 +16,284 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 用户管理Servlet
+ * 用户管理 Servlet（管理员）。
+ *
+ * <h3>安全改进</h3>
+ * <ul>
+ *   <li>新增用户与重置密码时，密码一律 BCrypt 加密后入库；</li>
+ *   <li>参数校验：用户名格式、密码强度、手机/邮箱格式、id 合法性；</li>
+ *   <li>不能删除或禁用自己，避免把自己锁在系统外。</li>
+ * </ul>
  */
 @WebServlet("/admin/userServlet")
 public class UserServlet extends HttpServlet {
-    private UserDao userDao = new UserDao();
-    
+
+    private static final long serialVersionUID = 1L;
+
+    private final UserDao userDao = new UserDao();
+
     @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
         doPost(request, response);
     }
-    
+
     @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        request.setCharacterEncoding("utf-8");
-        String action = request.getParameter("action");
-        
-        if ("list".equals(action)) {
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        request.setCharacterEncoding("UTF-8");
+
+        User loginUser = ServletUtils.requireRole(request, response, "admin");
+        if (loginUser == null) {
+            return;
+        }
+
+        String action = ServletUtils.getTrimmed(request, "action");
+        try {
+            if ("add".equals(action)) {
+                addUser(request, response);
+            } else if ("toAdd".equals(action)) {
+                toAddUser(request, response);
+            } else if ("update".equals(action)) {
+                updateUser(request, response, loginUser);
+            } else if ("delete".equals(action)) {
+                deleteUser(request, response, loginUser);
+            } else if ("resetPwd".equals(action)) {
+                resetPassword(request, response);
+            } else if ("toggleStatus".equals(action)) {
+                toggleStatus(request, response, loginUser);
+            } else if ("toEdit".equals(action)) {
+                toEditUser(request, response);
+            } else {
+                listUsers(request, response);
+            }
+        } catch (AppException | IllegalArgumentException e) {
+            request.setAttribute("msg", e.getMessage());
+            request.setAttribute("msgType", "error");
             listUsers(request, response);
-        } else if ("add".equals(action)) {
-            addUser(request, response);
-        } else if ("toAdd".equals(action)) {
-            toAddUser(request, response);
-        } else if ("update".equals(action)) {
-            updateUser(request, response);
-        } else if ("delete".equals(action)) {
-            deleteUser(request, response);
-        } else if ("resetPwd".equals(action)) {
-            resetPassword(request, response);
-        } else if ("toggleStatus".equals(action)) {
-            toggleStatus(request, response);
-        } else if ("toEdit".equals(action)) {
-            toEditUser(request, response);
-        } else {
-            listUsers(request, response);
+        } catch (Exception e) {
+            getServletContext().log("用户管理操作失败", e);
+            request.setAttribute("error", "用户管理操作失败，请稍后重试");
+            request.getRequestDispatcher("/admin/error.jsp").forward(request, response);
         }
     }
-    
-    /**
-     * 查询用户列表
-     */
-    private void listUsers(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        String role = request.getParameter("role");
-        String keyword = request.getParameter("keyword");
-        String status = request.getParameter("status");
+
+    // ======================================================================
+    // 查询
+    // ======================================================================
+
+    private void listUsers(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        String role = ServletUtils.getEnum(request, "role", null, "admin", "reader");
+        String keyword = ServletUtils.getParamWithLimit(request, "keyword", 50);
+        String status = ServletUtils.getEnum(request, "status", null, "active", "disabled");
+
+        boolean hasCondition = keyword != null || role != null || status != null;
+
         List<User> users;
-        
-        // 判断是否有有效的查询条件
-        boolean hasKeyword = keyword != null && !keyword.trim().isEmpty();
-        boolean hasRole = role != null && !role.trim().isEmpty();
-        boolean hasStatus = status != null && !status.trim().isEmpty();
-        boolean hasSearchCondition = hasKeyword || hasRole || hasStatus;
-        
-        // 先获取基础用户列表
-        if (hasRole) {
-            // 如果选择了身份筛选，先按身份获取
-            if ("reader".equals(role)) {
-                users = userDao.findReaders();
-            } else if ("admin".equals(role)) {
-                users = userDao.findAdmins();
-            } else {
-                users = userDao.findAll();
-            }
+        if ("reader".equals(role)) {
+            users = userDao.findReaders();
+        } else if ("admin".equals(role)) {
+            users = userDao.findAdmins();
         } else {
-            // 如果没有选择身份，获取所有用户
             users = userDao.findAll();
         }
-        
-        // 如果有查询条件，进行过滤
-        if (hasSearchCondition && users != null) {
-            List<User> filteredUsers = new ArrayList<>();
-            
-            for (User user : users) {
+
+        if (hasCondition) {
+            List<User> filtered = new ArrayList<>();
+            String kw = keyword == null ? null : keyword.toLowerCase();
+            for (User u : users) {
                 boolean match = true;
-                
-                // 按关键词过滤（只搜索用户名）
-                if (hasKeyword) {
-                    String keywordLower = keyword.trim().toLowerCase();
-                    String username = user.getUsername() != null ? user.getUsername().toLowerCase() : "";
-                    
-                    // 不区分大小写的模糊匹配
-                    boolean keywordMatch = username.contains(keywordLower);
-                    if (!keywordMatch) {
-                        match = false;
-                    }
+                if (kw != null) {
+                    String name = u.getUsername() == null ? "" : u.getUsername().toLowerCase();
+                    String realName = u.getRealName() == null ? "" : u.getRealName().toLowerCase();
+                    match = name.contains(kw) || realName.contains(kw);
                 }
-                
-                // 按状态过滤
-                if (hasStatus) {
-                    String userStatus = user.getStatus() != null ? user.getStatus() : "active";
-                    if (!status.equals(userStatus)) {
-                        match = false;
-                    }
+                if (match && status != null) {
+                    String s = u.getStatus() != null ? u.getStatus() : "active";
+                    match = status.equals(s);
                 }
-                
                 if (match) {
-                    filteredUsers.add(user);
+                    filtered.add(u);
                 }
             }
-            
-            users = filteredUsers;
-            
-            // 只有在有查询条件时才设置提示消息
-            if (!users.isEmpty()) {
-                request.setAttribute("msg", "查询成功，共找到 " + users.size() + " 条记录");
-                request.setAttribute("msgType", "success");
-            } else {
-                request.setAttribute("msg", "未找到符合条件的记录，请检查搜索条件");
-                request.setAttribute("msgType", "error");
-            }
+            users = filtered;
         }
-        
+
         request.setAttribute("userList", users);
         request.setAttribute("role", role);
         request.setAttribute("keyword", keyword);
         request.setAttribute("status", status);
         request.getRequestDispatcher("/admin/userList.jsp").forward(request, response);
     }
-    
-    /**
-     * 添加用户
-     */
-    private void addUser(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
-        String username = request.getParameter("username");
-        String password = request.getParameter("password");
-        String role = request.getParameter("role");
-        String realName = request.getParameter("realName");
-        String phone = request.getParameter("phone");
-        String email = request.getParameter("email");
-        
-        // 检查用户名是否已存在
-        if (userDao.findByUsername(username) != null) {
-            request.setAttribute("msg", "用户名已存在！");
-            listUsers(request, response);
-            return;
+
+    private void toEditUser(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        int id = ServletUtils.requireInt(request, "id", "用户ID");
+        User user = userDao.findById(id);
+        if (user == null) {
+            throw new AppException("用户不存在或已被删除");
         }
-        
+        request.setAttribute("user", user);
+        request.setAttribute("role", ServletUtils.getTrimmed(request, "role"));
+        request.getRequestDispatcher("/admin/userEdit.jsp").forward(request, response);
+    }
+
+    private void toAddUser(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        request.setAttribute("role", ServletUtils.getEnum(request, "role", "reader", "admin", "reader"));
+        request.getRequestDispatcher("/admin/userAdd.jsp").forward(request, response);
+    }
+
+    // ======================================================================
+    // 写入
+    // ======================================================================
+
+    /** 新增用户：密码 BCrypt 加密后入库 */
+    private void addUser(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        String username = ServletUtils.requireParam(request, "username", "用户名", 20);
+        String password = ServletUtils.getTrimmed(request, "password");
+        String role = ServletUtils.getEnum(request, "role", "reader", "admin", "reader");
+        String realName = ServletUtils.getParamWithLimit(request, "realName", 50);
+        String phone = ServletUtils.getTrimmed(request, "phone");
+        String email = ServletUtils.getTrimmed(request, "email");
+
+        ServletUtils.validateUsername(username);
+        ServletUtils.validatePhone(phone);
+        ServletUtils.validateEmail(email);
+
+        // 未填密码时使用默认密码
+        if (password == null) {
+            password = UserDao.DEFAULT_PASSWORD;
+        } else {
+            ServletUtils.validatePassword(password);
+        }
+
+        if (userDao.existsByUsername(username)) {
+            throw new AppException("用户名【" + username + "】已存在");
+        }
+
         User user = new User();
         user.setUsername(username);
-        user.setPassword(password != null && !password.trim().isEmpty() ? password : "123");
+        user.setPassword(BCryptUtil.hashpw(password));   // ★ 加密存储
         user.setRole(role);
-        user.setRealName(realName);
+        user.setRealName(realName != null ? realName : username);
         user.setPhone(phone);
         user.setEmail(email);
         user.setStatus("active");
-        
-        int row = userDao.add(user);
-        if (row > 0) {
-            response.sendRedirect("userServlet?action=list&role=" + role);
-        } else {
-            request.setAttribute("msg", "添加失败！");
-            listUsers(request, response);
+
+        if (userDao.add(user) <= 0) {
+            throw new AppException("添加失败，请稍后重试");
         }
+        response.sendRedirect(request.getContextPath() + "/admin/userServlet?action=list&role=" + role);
     }
-    
-    /**
-     * 更新用户信息
-     */
-    private void updateUser(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
-        String idStr = request.getParameter("id");
-        String username = request.getParameter("username");
-        String role = request.getParameter("role");
-        String realName = request.getParameter("realName");
-        String phone = request.getParameter("phone");
-        String email = request.getParameter("email");
-        
-        // 获取原用户信息，保持status不变
-        User originalUser = userDao.findById(Integer.parseInt(idStr));
-        
+
+    /** 更新用户基本信息（不含密码） */
+    private void updateUser(HttpServletRequest request, HttpServletResponse response, User loginUser)
+            throws ServletException, IOException {
+        int id = ServletUtils.requireInt(request, "id", "用户ID");
+        String username = ServletUtils.requireParam(request, "username", "用户名", 20);
+        String role = ServletUtils.getEnum(request, "role", "reader", "admin", "reader");
+        String realName = ServletUtils.getParamWithLimit(request, "realName", 50);
+        String phone = ServletUtils.getTrimmed(request, "phone");
+        String email = ServletUtils.getTrimmed(request, "email");
+
+        ServletUtils.validateUsername(username);
+        ServletUtils.validatePhone(phone);
+        ServletUtils.validateEmail(email);
+
+        User existing = userDao.findById(id);
+        if (existing == null) {
+            throw new AppException("用户不存在或已被删除");
+        }
+        User sameName = userDao.findByUsername(username);
+        if (sameName != null && !sameName.getId().equals(id)) {
+            throw new AppException("用户名【" + username + "】已被占用");
+        }
+        // 不允许把自己改成读者（否则会失去管理权限）
+        Integer selfId = loginUser.getId();
+        if (selfId != null && selfId.intValue() == id && !"admin".equals(role)) {
+            throw new AppException("不能修改自己的身份为读者");
+        }
+
         User user = new User();
-        user.setId(Integer.parseInt(idStr));
+        user.setId(id);
         user.setUsername(username);
         user.setRole(role);
         user.setRealName(realName);
         user.setPhone(phone);
         user.setEmail(email);
-        user.setStatus(originalUser.getStatus()); // 保持原状态
-        
-        int row = userDao.update(user);
-        if (row > 0) {
-            response.sendRedirect("userServlet?action=list&role=" + role);
-        } else {
-            request.setAttribute("msg", "更新失败！");
-            listUsers(request, response);
+        user.setStatus(existing.getStatus());
+
+        if (userDao.update(user) <= 0) {
+            throw new AppException("更新失败，请稍后重试");
         }
+        response.sendRedirect(request.getContextPath() + "/admin/userServlet?action=list&role=" + role);
     }
-    
-    /**
-     * 删除用户
-     */
-    private void deleteUser(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
-        String idStr = request.getParameter("id");
-        String role = request.getParameter("role");
-        
-        if (idStr != null) {
-            int row = userDao.delete(Integer.parseInt(idStr));
-            if (row > 0) {
-                request.setAttribute("msg", "用户已删除");
-                request.setAttribute("msgType", "success");
-            } else {
-                request.setAttribute("msg", "删除失败");
-                request.setAttribute("msgType", "error");
-            }
+
+    private void deleteUser(HttpServletRequest request, HttpServletResponse response, User loginUser)
+            throws ServletException, IOException {
+        int id = ServletUtils.requireInt(request, "id", "用户ID");
+        String role = ServletUtils.getTrimmed(request, "role");
+
+        Integer selfId2 = loginUser.getId();
+        if (selfId2 != null && selfId2.intValue() == id) {
+            throw new AppException("不能删除当前登录的账号");
         }
-        
-        // 保持查询条件
+        User target = userDao.findById(id);
+        if (target == null) {
+            throw new AppException("用户不存在或已被删除");
+        }
+        userDao.delete(id);
+
+        request.setAttribute("msg", "用户【" + target.getUsername() + "】已删除");
+        request.setAttribute("msgType", "success");
         request.setAttribute("role", role);
         listUsers(request, response);
     }
-    
+
     /**
-     * 重置密码
+     * 重置密码为默认值 123456（BCrypt 加密后存储）。
      */
-    private void resetPassword(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
-        String idStr = request.getParameter("id");
-        String role = request.getParameter("role");
-        
-        if (idStr != null) {
-            int row = userDao.resetPassword(Integer.parseInt(idStr));
-            if (row > 0) {
-                request.setAttribute("msg", "密码已重置为123456");
-                request.setAttribute("msgType", "success");
-            } else {
-                request.setAttribute("msg", "重置密码失败");
-                request.setAttribute("msgType", "error");
-            }
+    private void resetPassword(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        int id = ServletUtils.requireInt(request, "id", "用户ID");
+        String role = ServletUtils.getTrimmed(request, "role");
+
+        User target = userDao.findById(id);
+        if (target == null) {
+            throw new AppException("用户不存在或已被删除");
         }
-        
-        // 保持查询条件
+        userDao.resetPassword(id);   // 内部 BCrypt 加密
+
+        request.setAttribute("msg", "密码已重置为 " + UserDao.DEFAULT_PASSWORD);
+        request.setAttribute("msgType", "success");
         request.setAttribute("role", role);
         listUsers(request, response);
     }
-    
-    /**
-     * 切换用户状态（启用/禁用）
-     */
-    private void toggleStatus(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
-        String idStr = request.getParameter("id");
-        String status = request.getParameter("status");
-        String role = request.getParameter("role");
-        
-        if (idStr != null && status != null) {
-            String newStatus = "active".equals(status) ? "disabled" : "active";
-            int row = userDao.updateStatus(Integer.parseInt(idStr), newStatus);
-            if (row > 0) {
-                String statusText = "active".equals(newStatus) ? "已启用" : "已禁用";
-                request.setAttribute("msg", "用户状态已更新：" + statusText);
-                request.setAttribute("msgType", "success");
-            } else {
-                request.setAttribute("msg", "状态更新失败");
-                request.setAttribute("msgType", "error");
-            }
+
+    private void toggleStatus(HttpServletRequest request, HttpServletResponse response, User loginUser)
+            throws ServletException, IOException {
+        int id = ServletUtils.requireInt(request, "id", "用户ID");
+        String status = ServletUtils.requireParam(request, "status", "状态");
+        String role = ServletUtils.getTrimmed(request, "role");
+
+        Integer selfId2 = loginUser.getId();
+        if (selfId2 != null && selfId2.intValue() == id) {
+            throw new AppException("不能禁用当前登录的账号");
         }
-        
-        // 保持查询条件
+        User target = userDao.findById(id);
+        if (target == null) {
+            throw new AppException("用户不存在或已被删除");
+        }
+
+        String newStatus = "active".equals(status) ? "disabled" : "active";
+        userDao.updateStatus(id, newStatus);
+
+        request.setAttribute("msg", "用户已" + ("active".equals(newStatus) ? "启用" : "禁用"));
+        request.setAttribute("msgType", "success");
         request.setAttribute("role", role);
         listUsers(request, response);
-    }
-    
-    /**
-     * 跳转到编辑页面
-     */
-    private void toEditUser(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        String idStr = request.getParameter("id");
-        String role = request.getParameter("role");
-        
-        if (idStr != null) {
-            User user = userDao.findById(Integer.parseInt(idStr));
-            request.setAttribute("user", user);
-        }
-        
-        request.setAttribute("role", role);
-        request.getRequestDispatcher("/admin/userEdit.jsp").forward(request, response);
-    }
-    
-    /**
-     * 跳转到新增页面
-     */
-    private void toAddUser(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        String role = request.getParameter("role");
-        request.setAttribute("role", role);
-        request.getRequestDispatcher("/admin/userAdd.jsp").forward(request, response);
     }
 }

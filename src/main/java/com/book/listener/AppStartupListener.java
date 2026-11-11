@@ -1,6 +1,7 @@
 package com.book.listener;
 
 import com.book.util.DBUtil;
+
 import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
 import javax.servlet.annotation.WebListener;
@@ -9,80 +10,63 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 
 /**
- * 应用启动监听器
- * 用于检查数据库状态
+ * 应用启动监听器：启动时做一次数据库连通性与数据量自检。
+ *
+ * <p>改造点：使用 try-with-resources 管理连接，避免启动阶段连接泄漏；
+ * 数据库异常不会阻断应用启动，只在日志中给出清晰提示。</p>
  */
 @WebListener
 public class AppStartupListener implements ServletContextListener {
-    
+
     @Override
     public void contextInitialized(ServletContextEvent sce) {
         System.out.println("========================================");
-        System.out.println("图书管理系统启动中...");
+        System.out.println("  图书管理系统启动中...");
         System.out.println("========================================");
-        
-        // 检查数据库状态
+
         checkDatabaseStatus();
-        
+
         System.out.println("========================================");
-        System.out.println("系统启动完成！");
+        System.out.println("  系统启动完成");
         System.out.println("========================================");
     }
-    
+
     @Override
     public void contextDestroyed(ServletContextEvent sce) {
         System.out.println("图书管理系统已关闭");
     }
-    
-    /**
-     * 检查数据库状态
-     */
+
+    /** 检查数据库连接与关键表的数据量 */
     private void checkDatabaseStatus() {
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        try {
-            conn = DBUtil.getConn();
-            
-            // 检查分类数量
-            pstmt = conn.prepareStatement("SELECT COUNT(*) FROM categories");
-            rs = pstmt.executeQuery();
-            rs.next();
-            int categoryCount = rs.getInt(1);
-            rs.close();
-            pstmt.close();
-            
-            // 检查用户数量
-            pstmt = conn.prepareStatement("SELECT COUNT(*) FROM users");
-            rs = pstmt.executeQuery();
-            rs.next();
-            int userCount = rs.getInt(1);
-            rs.close();
-            pstmt.close();
-            
-            // 检查图书数量
-            pstmt = conn.prepareStatement("SELECT COUNT(*) FROM books");
-            rs = pstmt.executeQuery();
-            rs.next();
-            int bookCount = rs.getInt(1);
-            rs.close();
-            pstmt.close();
-            
-            System.out.println("数据库状态：");
-            System.out.println("  - 分类数量：" + categoryCount);
-            System.out.println("  - 用户数量：" + userCount);
-            System.out.println("  - 图书数量：" + bookCount);
-            
-            if (bookCount == 0) {
-                System.out.println("\n提示：数据库中没有图书数据");
-                System.out.println("请访问管理员首页，点击'导入示例图书'按钮导入数据");
+        try (Connection conn = DBUtil.requireConnection()) {
+            int categories = count(conn, "categories");
+            int users = count(conn, "users");
+            int books = count(conn, "books");
+            int borrows = count(conn, "borrow_records");
+
+            System.out.println("[启动自检] 数据库连接正常");
+            System.out.println("  分类：" + categories + " 个");
+            System.out.println("  用户：" + users + " 个");
+            System.out.println("  图书：" + books + " 本");
+            System.out.println("  借阅记录：" + borrows + " 条");
+
+            if (users == 0) {
+                System.out.println("[启动自检] 提示：暂无用户，请以管理员身份访问 /initSystem 初始化");
             }
-            
+            if (books == 0) {
+                System.out.println("[启动自检] 提示：暂无图书，可在管理员首页执行系统初始化");
+            }
         } catch (Exception e) {
-            System.out.println("检查数据库状态失败：" + e.getMessage());
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt, rs);
+            System.out.println("[启动自检] 数据库检查失败：" + e.getMessage());
+            System.out.println("[启动自检] 请确认 MySQL 已启动，并检查 db.properties 中的连接配置");
+        }
+    }
+
+    private int count(Connection conn, String table) throws Exception {
+        // 表名来自代码内置常量，非用户输入，安全
+        try (PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM " + table);
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() ? rs.getInt(1) : 0;
         }
     }
 }

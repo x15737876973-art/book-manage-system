@@ -1,88 +1,115 @@
 package com.book.servlet;
 
 import com.book.util.DBUtil;
+import com.book.util.ServletUtils;
+
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.sql.*;
+import java.io.PrintWriter;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
 /**
- * 检查数据库图书数据的Servlet
+ * 数据库健康检查 Servlet（仅管理员）。
+ *
+ * <h3>本次修复</h3>
+ * <ul>
+ *   <li>旧版本直接 {@code conn.createStatement()} 且没有 try-with-resources，
+ *       异常路径下连接会泄漏；现使用 try-with-resources；</li>
+ *   <li>输出内容做 HTML 转义，避免图书名中的 {@code <} 破坏页面（XSS）；</li>
+ *   <li>新增管理员身份校验。</li>
+ * </ul>
  */
 @WebServlet("/admin/checkBooks")
 public class CheckBooksServlet extends HttpServlet {
-    
+
+    private static final long serialVersionUID = 1L;
+
     @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
         doPost(request, response);
     }
-    
+
     @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
         response.setContentType("text/html;charset=UTF-8");
-        
-        StringBuilder result = new StringBuilder();
-        result.append("<html><head><title>检查数据库</title></head><body>");
-        result.append("<h2>数据库检查结果</h2>");
-        
-        try {
-            Connection conn = DBUtil.getConn();
-            Statement stmt = conn.createStatement();
-            
-            // 检查分类
-            ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM categories");
-            rs.next();
-            int categoryCount = rs.getInt(1);
-            rs.close();
-            result.append("<p>分类数量: " + categoryCount + "</p>");
-            
-            // 检查图书
-            rs = stmt.executeQuery("SELECT COUNT(*) FROM books");
-            rs.next();
-            int bookCount = rs.getInt(1);
-            rs.close();
-            result.append("<p>图书数量: " + bookCount + "</p>");
-            
-            // 检查读者
-            rs = stmt.executeQuery("SELECT COUNT(*) FROM users WHERE role='reader'");
-            rs.next();
-            int readerCount = rs.getInt(1);
-            rs.close();
-            result.append("<p>读者数量: " + readerCount + "</p>");
-            
-            // 显示图书列表
-            if (bookCount > 0) {
-                result.append("<h3>图书列表（前10本）:</h3>");
-                result.append("<table border='1'><tr><th>ID</th><th>编号</th><th>书名</th><th>作者</th><th>库存</th></tr>");
-                rs = stmt.executeQuery("SELECT id, bid, bname, author, stock FROM books LIMIT 10");
-                while (rs.next()) {
-                    result.append("<tr>");
-                    result.append("<td>" + rs.getInt("id") + "</td>");
-                    result.append("<td>" + rs.getString("bid") + "</td>");
-                    result.append("<td>" + rs.getString("bname") + "</td>");
-                    result.append("<td>" + rs.getString("author") + "</td>");
-                    result.append("<td>" + rs.getInt("stock") + "</td>");
-                    result.append("</tr>");
-                }
-                rs.close();
-                result.append("</table>");
-            } else {
-                result.append("<p style='color:red;'>⚠️ 数据库中没有图书数据！</p>");
-                result.append("<p><a href='insertBooksNow'>点击这里插入30本图书数据</a></p>");
-            }
-            
-            conn.close();
-            result.append("<p><a href='bookManageServlet?action=list'>返回图书列表</a></p>");
-            
-        } catch (Exception e) {
-            result.append("<p style='color:red;'>错误: " + e.getMessage() + "</p>");
-            e.printStackTrace();
+
+        if (ServletUtils.requireRole(request, response, "admin") == null) {
+            return;
         }
-        
-        result.append("</body></html>");
-        response.getWriter().write(result.toString());
+
+        PrintWriter out = response.getWriter();
+        out.println("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>数据库检查</title>");
+        out.println("<style>body{font-family:system-ui,'Microsoft YaHei',sans-serif;padding:20px}"
+                + "table{border-collapse:collapse}th,td{border:1px solid #ddd;padding:6px 10px}"
+                + "th{background:#4a7cf7;color:#fff}</style></head><body>");
+        out.println("<h2>数据库检查结果</h2>");
+
+        try (Connection conn = DBUtil.requireConnection()) {
+            int categoryCount = count(conn, "SELECT COUNT(*) FROM categories");
+            int bookCount = count(conn, "SELECT COUNT(*) FROM books");
+            int readerCount = count(conn, "SELECT COUNT(*) FROM users WHERE role = 'reader'");
+
+            out.println("<p>分类数量：" + categoryCount + "</p>");
+            out.println("<p>图书数量：" + bookCount + "</p>");
+            out.println("<p>读者数量：" + readerCount + "</p>");
+
+            if (bookCount > 0) {
+                out.println("<h3>图书列表（前 10 本）</h3>");
+                out.println("<table><tr><th>ID</th><th>编号</th><th>书名</th><th>作者</th><th>库存</th></tr>");
+                String sql = "SELECT id, bid, bname, author, stock FROM books ORDER BY id LIMIT ?";
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setInt(1, 10);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            out.println("<tr><td>" + rs.getInt("id") + "</td>"
+                                    + "<td>" + esc(rs.getString("bid")) + "</td>"
+                                    + "<td>" + esc(rs.getString("bname")) + "</td>"
+                                    + "<td>" + esc(rs.getString("author")) + "</td>"
+                                    + "<td>" + rs.getInt("stock") + "</td></tr>");
+                        }
+                    }
+                }
+                out.println("</table>");
+            } else {
+                out.println("<p style='color:red'>⚠️ 数据库中没有图书数据</p>");
+            }
+
+            out.println("<p><a href='" + request.getContextPath()
+                    + "/admin/bookManageServlet?action=list'>返回图书列表</a></p>");
+
+        } catch (SQLException e) {
+            getServletContext().log("数据库检查失败", e);
+            out.println("<p style='color:red'>检查失败：" + esc(e.getMessage()) + "</p>");
+        } catch (Exception e) {
+            getServletContext().log("数据库检查失败", e);
+            out.println("<p style='color:red'>检查失败，请确认数据库已启动</p>");
+        }
+
+        out.println("</body></html>");
+    }
+
+    private int count(Connection conn, String sql) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() ? rs.getInt(1) : 0;
+        }
+    }
+
+    /** HTML 转义，防止 XSS */
+    private String esc(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace("\"", "&quot;");
     }
 }

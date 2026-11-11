@@ -146,39 +146,39 @@ INSERT INTO categories(name, description) VALUES
 
 -- 插入管理员用户
 INSERT INTO users(username, password, role, real_name, phone, email, status) VALUES
-('admin', '123456', 'admin', '系统管理员', '13800000000', 'admin@library.com', 'active');
+('admin', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'admin', '系统管理员', '13800000000', 'admin@library.com', 'active');
 
 -- 插入29个读者用户
 INSERT INTO users(username, password, role, real_name, phone, email, status) VALUES
-('reader01', '123456', 'reader', '读者1', '13800000001', 'reader01@library.com', 'active'),
-('reader02', '123456', 'reader', '读者2', '13800000002', 'reader02@library.com', 'active'),
-('reader03', '123456', 'reader', '读者3', '13800000003', 'reader03@library.com', 'active'),
-('reader04', '123456', 'reader', '读者4', '13800000004', 'reader04@library.com', 'active'),
-('reader05', '123456', 'reader', '读者5', '13800000005', 'reader05@library.com', 'active'),
-('reader06', '123456', 'reader', '读者6', '13800000006', 'reader06@library.com', 'active'),
-('reader07', '123456', 'reader', '读者7', '13800000007', 'reader07@library.com', 'active'),
-('reader08', '123456', 'reader', '读者8', '13800000008', 'reader08@library.com', 'active'),
-('reader09', '123456', 'reader', '读者9', '13800000009', 'reader09@library.com', 'active'),
-('reader10', '123456', 'reader', '读者10', '13800000010', 'reader10@library.com', 'active'),
-('reader11', '123456', 'reader', '读者11', '13800000011', 'reader11@library.com', 'active'),
-('reader12', '123456', 'reader', '读者12', '13800000012', 'reader12@library.com', 'active'),
-('reader13', '123456', 'reader', '读者13', '13800000013', 'reader13@library.com', 'active'),
-('reader14', '123456', 'reader', '读者14', '13800000014', 'reader14@library.com', 'active'),
-('reader15', '123456', 'reader', '读者15', '13800000015', 'reader15@library.com', 'active'),
-('reader16', '123456', 'reader', '读者16', '13800000016', 'reader16@library.com', 'active'),
-('reader17', '123456', 'reader', '读者17', '13800000017', 'reader17@library.com', 'active'),
-('reader18', '123456', 'reader', '读者18', '13800000018', 'reader18@library.com', 'active'),
-('reader19', '123456', 'reader', '读者19', '13800000019', 'reader19@library.com', 'active'),
-('reader20', '123456', 'reader', '读者20', '13800000020', 'reader20@library.com', 'active'),
-('reader21', '123456', 'reader', '读者21', '13800000021', 'reader21@library.com', 'active'),
-('reader22', '123456', 'reader', '读者22', '13800000022', 'reader22@library.com', 'active'),
-('reader23', '123456', 'reader', '读者23', '13800000023', 'reader23@library.com', 'active'),
-('reader24', '123456', 'reader', '读者24', '13800000024', 'reader24@library.com', 'active'),
-('reader25', '123456', 'reader', '读者25', '13800000025', 'reader25@library.com', 'active'),
-('reader26', '123456', 'reader', '读者26', '13800000026', 'reader26@library.com', 'active'),
-('reader27', '123456', 'reader', '读者27', '13800000027', 'reader27@library.com', 'active'),
-('reader28', '123456', 'reader', '读者28', '13800000028', 'reader28@library.com', 'active'),
-('reader29', '123456', 'reader', '读者29', '13800000029', 'reader29@library.com', 'active');
+('reader01', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者1', '13800000001', 'reader01@library.com', 'active'),
+('reader02', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者2', '13800000002', 'reader02@library.com', 'active'),
+('reader03', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者3', '13800000003', 'reader03@library.com', 'active'),
+('reader04', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者4', '13800000004', 'reader04@library.com', 'active'),
+('reader05', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者5', '13800000005', 'reader05@library.com', 'active'),
+('reader06', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者6', '13800000006', 'reader06@library.com', 'active'),
+('reader07', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者7', '13800000007', 'reader07@library.com', 'active'),
+('reader08', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者8', '13800000008', 'reader08@library.com', 'active'),
+('reader09', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者9', '13800000009', 'reader09@library.com', 'active'),
+('reader10', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者10', '13800000010', 'reader10@library.com', 'active'),
+('reader11', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者11', '13800000011', 'reader11@library.com', 'active'),
+('reader12', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者12', '13800000012', 'reader12@library.com', 'active'),
+('reader13', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者13', '13800000013', 'reader13@library.com', 'active'),
+('reader14', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者14', '13800000014', 'reader14@library.com', 'active'),
+('reader15', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者15', '13800000015', 'reader15@library.com', 'active'),
+('reader16', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者16', '13800000016', 'reader16@library.com', 'active'),
+('reader17', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者17', '13800000017', 'reader17@library.com', 'active'),
+('reader18', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者18', '13800000018', 'reader18@library.com', 'active'),
+('reader19', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者19', '13800000019', 'reader19@library.com', 'active'),
+('reader20', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者20', '13800000020', 'reader20@library.com', 'active'),
+('reader21', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者21', '13800000021', 'reader21@library.com', 'active'),
+('reader22', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者22', '13800000022', 'reader22@library.com', 'active'),
+('reader23', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者23', '13800000023', 'reader23@library.com', 'active'),
+('reader24', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者24', '13800000024', 'reader24@library.com', 'active'),
+('reader25', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者25', '13800000025', 'reader25@library.com', 'active'),
+('reader26', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者26', '13800000026', 'reader26@library.com', 'active'),
+('reader27', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者27', '13800000027', 'reader27@library.com', 'active'),
+('reader28', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者28', '13800000028', 'reader28@library.com', 'active'),
+('reader29', '$2a$10$MY3qE9NIr8rrkLzz5HtnfeJEs2L1zhoBFLhRBGT6pB4KrL3XLwF8K', 'reader', '读者29', '13800000029', 'reader29@library.com', 'active');
 
 -- 插入30本图书
 INSERT INTO books(bid, isbn, bname, author, publisher, publish_date, price, category_id, stock, available_stock, location) VALUES
@@ -252,8 +252,8 @@ INSERT INTO borrow_records(user_id, book_id, borrow_date, due_date, return_date,
 SELECT '========================================' AS '';
 SELECT '✅ 数据库初始化完成！' AS '';
 SELECT '========================================' AS '';
-SELECT '管理员账号：admin / 123456' AS '';
-SELECT '读者账号：reader01-reader29 / 123456' AS '';
+SELECT '管理员账号：admin / 123456（密码以 BCrypt 密文存储）' AS '';
+SELECT '读者账号：reader01-reader29 / 123456（密码以 BCrypt 密文存储）' AS '';
 SELECT '分类数量：30个' AS '';
 SELECT '图书数量：30本' AS '';
 SELECT '用户数量：30个' AS '';

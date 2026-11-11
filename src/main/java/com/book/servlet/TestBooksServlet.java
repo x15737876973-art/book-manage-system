@@ -2,6 +2,8 @@ package com.book.servlet;
 
 import com.book.dao.BookDao;
 import com.book.entity.Book;
+import com.book.util.ServletUtils;
+
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
@@ -12,75 +14,79 @@ import java.io.PrintWriter;
 import java.util.List;
 
 /**
- * 测试图书数据的Servlet
+ * 图书数据诊断 Servlet（仅管理员）。
+ *
+ * <p>改造点：管理员鉴权、HTML 转义防 XSS、统一异常处理。</p>
  */
 @WebServlet("/admin/testBooksServlet")
 public class TestBooksServlet extends HttpServlet {
-    
+
+    private static final long serialVersionUID = 1L;
+
+    private final BookDao bookDao = new BookDao();
+
     @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) 
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        
+        doPost(request, response);
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
         response.setContentType("text/html;charset=UTF-8");
+
+        if (ServletUtils.requireRole(request, response, "admin") == null) {
+            return;
+        }
+
         PrintWriter out = response.getWriter();
-        
-        BookDao bookDao = new BookDao();
-        
+        out.println("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>图书数据诊断</title>");
+        out.println("<style>body{font-family:system-ui,'Microsoft YaHei',sans-serif;padding:20px}"
+                + "table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px;text-align:left}"
+                + "th{background:#4a7cf7;color:#fff}tr:nth-child(even){background:#f7f8fa}"
+                + ".info{background:#e7f3ff;padding:14px;border-radius:6px;margin-bottom:16px}</style></head><body>");
+
         try {
+            int total = bookDao.count();
             List<Book> books = bookDao.findAll();
-            int count = bookDao.count();
-            
-            out.println("<html><head><title>测试图书数据</title>");
-            out.println("<style>");
-            out.println("body { font-family: Arial, sans-serif; padding: 20px; }");
-            out.println("table { border-collapse: collapse; width: 100%; margin-top: 20px; }");
-            out.println("th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }");
-            out.println("th { background-color: #4CAF50; color: white; }");
-            out.println("tr:nth-child(even) { background-color: #f2f2f2; }");
-            out.println(".info { background: #e7f3ff; padding: 15px; border-radius: 5px; margin-bottom: 20px; }");
-            out.println("</style>");
-            out.println("</head><body>");
-            
-            out.println("<h2>📊 图书数据测试结果</h2>");
-            out.println("<div class='info'>");
-            out.println("<p><strong>图书总数：</strong>" + count + " 本</p>");
-            out.println("<p><strong>查询结果：</strong>" + books.size() + " 条记录</p>");
-            out.println("</div>");
-            
+
+            out.println("<h2>📊 图书数据诊断</h2>");
+            out.println("<div class='info'><p><strong>图书总数：</strong>" + total + " 本</p>"
+                    + "<p><strong>查询返回：</strong>" + books.size() + " 条</p></div>");
+
             if (books.isEmpty()) {
-                out.println("<div style='color: red; padding: 20px; background: #fff3cd; border-radius: 5px;'>");
-                out.println("<h3>⚠️ 数据库中没有图书数据！</h3>");
-                out.println("<p>请先导入图书数据：</p>");
-                out.println("<ol>");
-                out.println("<li>访问 <a href='importBooksServlet'>导入示例图书</a></li>");
-                out.println("<li>或手动添加图书</li>");
-                out.println("</ol>");
-                out.println("</div>");
+                out.println("<p style='color:#b26a00'>⚠️ 没有查询到图书数据，请先执行系统初始化</p>");
             } else {
-                out.println("<table>");
-                out.println("<tr><th>ID</th><th>图书编号</th><th>书名</th><th>作者</th><th>分类</th><th>库存</th><th>可借</th></tr>");
-                
-                for (Book book : books) {
-                    out.println("<tr>");
-                    out.println("<td>" + book.getId() + "</td>");
-                    out.println("<td>" + book.getBid() + "</td>");
-                    out.println("<td>" + book.getBname() + "</td>");
-                    out.println("<td>" + book.getAuthor() + "</td>");
-                    out.println("<td>" + (book.getCategoryName() != null ? book.getCategoryName() : "未分类") + "</td>");
-                    out.println("<td>" + book.getStock() + "</td>");
-                    out.println("<td>" + book.getAvailableStock() + "</td>");
-                    out.println("</tr>");
+                out.println("<table><tr><th>ID</th><th>编号</th><th>书名</th><th>作者</th>"
+                        + "<th>分类</th><th>库存</th><th>可借</th></tr>");
+                for (Book b : books) {
+                    out.println("<tr><td>" + b.getId() + "</td>"
+                            + "<td>" + esc(b.getBid()) + "</td>"
+                            + "<td>" + esc(b.getBname()) + "</td>"
+                            + "<td>" + esc(b.getAuthor()) + "</td>"
+                            + "<td>" + esc(b.getCategoryName() == null ? "未分类" : b.getCategoryName()) + "</td>"
+                            + "<td>" + b.getStock() + "</td>"
+                            + "<td>" + b.getAvailableStock() + "</td></tr>");
                 }
-                
                 out.println("</table>");
             }
-            
-            out.println("<br><a href='bookManageServlet?action=list' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px;'>返回图书列表</a>");
-            out.println("</body></html>");
-            
+            out.println("<p><a href='" + request.getContextPath()
+                    + "/admin/bookManageServlet?action=list'>返回图书管理</a></p>");
+
         } catch (Exception e) {
-            out.println("<h3 style='color: red;'>❌ 错误：" + e.getMessage() + "</h3>");
-            e.printStackTrace(new PrintWriter(out));
+            getServletContext().log("图书诊断失败", e);
+            out.println("<p style='color:red'>诊断失败：" + esc(e.getMessage()) + "</p>");
         }
+
+        out.println("</body></html>");
+    }
+
+    private String esc(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace("\"", "&quot;");
     }
 }

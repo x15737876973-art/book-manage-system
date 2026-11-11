@@ -3,186 +3,79 @@ package com.book.dao;
 import com.book.entity.Category;
 import com.book.util.DBUtil;
 
-import java.sql.*;
-import java.util.ArrayList;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 
 /**
- * 图书分类数据访问层
+ * 图书分类数据访问层。
+ *
+ * <p>所有 SQL 使用 PreparedStatement 预编译，资源由 try-with-resources 自动释放。</p>
  */
 public class CategoryDao {
-    
-    /**
-     * 添加分类
-     */
+
+    private static final String BASE_SELECT = "SELECT * FROM categories";
+
+    /** 新增分类 */
     public int add(Category category) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        int row = 0;
-        String sql = "INSERT INTO categories(name, description) VALUES(?,?)";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, category.getName());
-            pstmt.setString(2, category.getDescription());
-            row = pstmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt);
-        }
-        return row;
+        return DBUtil.update("INSERT INTO categories(name, description) VALUES(?,?)",
+                ps -> {
+                    ps.setString(1, category.getName());
+                    ps.setString(2, category.getDescription());
+                });
     }
-    
-    /**
-     * 更新分类
-     */
+
+    /** 更新分类 */
     public int update(Category category) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        int row = 0;
-        String sql = "UPDATE categories SET name=?, description=? WHERE id=?";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, category.getName());
-            pstmt.setString(2, category.getDescription());
-            pstmt.setInt(3, category.getId());
-            row = pstmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt);
-        }
-        return row;
+        return DBUtil.update("UPDATE categories SET name=?, description=? WHERE id=?",
+                ps -> {
+                    ps.setString(1, category.getName());
+                    ps.setString(2, category.getDescription());
+                    ps.setInt(3, category.getId());
+                });
     }
-    
-    /**
-     * 删除分类
-     */
+
+    /** 删除分类 */
     public int delete(Integer id) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        int row = 0;
-        String sql = "DELETE FROM categories WHERE id=?";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, id);
-            row = pstmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt);
-        }
-        return row;
+        return DBUtil.update("DELETE FROM categories WHERE id = ?", ps -> ps.setInt(1, id));
     }
-    
-    /**
-     * 根据ID查询分类
-     */
+
+    /** 根据 id 查询分类 */
     public Category findById(Integer id) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        Category category = null;
-        String sql = "SELECT * FROM categories WHERE id=?";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, id);
-            rs = pstmt.executeQuery();
-            if (rs.next()) {
-                category = new Category();
-                category.setId(rs.getInt("id"));
-                category.setName(rs.getString("name"));
-                category.setDescription(rs.getString("description"));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt, rs);
+        if (id == null) {
+            return null;
         }
-        return category;
+        List<Category> list = DBUtil.query(BASE_SELECT + " WHERE id = ?", ps -> ps.setInt(1, id), this::mapRow);
+        return list.isEmpty() ? null : list.get(0);
     }
-    
-    /**
-     * 根据名称查询分类
-     */
+
+    /** 根据名称查询分类（用于重名校验） */
     public Category findByName(String name) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        Category category = null;
-        String sql = "SELECT * FROM categories WHERE name=?";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, name);
-            rs = pstmt.executeQuery();
-            if (rs.next()) {
-                category = new Category();
-                category.setId(rs.getInt("id"));
-                category.setName(rs.getString("name"));
-                category.setDescription(rs.getString("description"));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt, rs);
+        if (name == null || name.trim().isEmpty()) {
+            return null;
         }
-        return category;
+        List<Category> list = DBUtil.query(BASE_SELECT + " WHERE name = ?",
+                ps -> ps.setString(1, name.trim()), this::mapRow);
+        return list.isEmpty() ? null : list.get(0);
     }
-    
-    /**
-     * 查询所有分类
-     */
+
+    /** 查询所有分类 */
     public List<Category> findAll() {
-        List<Category> list = new ArrayList<>();
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        String sql = "SELECT * FROM categories ORDER BY id";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            rs = pstmt.executeQuery();
-            while (rs.next()) {
-                Category category = new Category();
-                category.setId(rs.getInt("id"));
-                category.setName(rs.getString("name"));
-                category.setDescription(rs.getString("description"));
-                list.add(category);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt, rs);
-        }
-        return list;
+        return DBUtil.query(BASE_SELECT + " ORDER BY id", null, this::mapRow);
     }
-    
-    /**
-     * 统计分类下的图书数量
-     */
+
+    /** 统计分类下的图书数量（删除前校验，防止误删） */
     public int getBookCountByCategory(Integer categoryId) {
-        Connection conn = DBUtil.getConn();
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        String sql = "SELECT COUNT(*) FROM books WHERE category_id=?";
-        
-        try {
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, categoryId);
-            rs = pstmt.executeQuery();
-            if (rs.next()) {
-                return rs.getInt(1);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            DBUtil.close(conn, pstmt, rs);
-        }
-        return 0;
+        return (int) DBUtil.queryLong("SELECT COUNT(*) FROM books WHERE category_id = ?",
+                ps -> ps.setInt(1, categoryId));
+    }
+
+    /** 结果集 → Category 实体 */
+    private Category mapRow(ResultSet rs) throws SQLException {
+        Category category = new Category();
+        category.setId(rs.getInt("id"));
+        category.setName(rs.getString("name"));
+        category.setDescription(rs.getString("description"));
+        return category;
     }
 }

@@ -1,14 +1,23 @@
 package com.book.servlet;
 
-import com.book.dao.*;
-import com.book.entity.*;
+import com.book.dao.BookDao;
+import com.book.dao.BorrowDao;
+import com.book.dao.FineDao;
+import com.book.dao.ReservationDao;
+import com.book.entity.Book;
+import com.book.entity.BorrowRecord;
+import com.book.entity.FineRecord;
+import com.book.entity.Reservation;
+import com.book.entity.User;
+import com.book.util.AppException;
+import com.book.util.DBUtil;
+import com.book.util.ServletUtils;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
 import java.io.IOException;
 import java.sql.Date;
 import java.util.ArrayList;
@@ -16,359 +25,263 @@ import java.util.Calendar;
 import java.util.List;
 
 /**
- * 读者借阅操作Servlet
+ * 读者自助借阅 Servlet。
+ *
+ * <h3>安全与健壮性改造</h3>
+ * <ul>
+ *   <li><b>身份校验</b>：每个动作都确认已登录且为 reader；</li>
+ *   <li><b>越权防护</b>：取消预约时校验该预约确属本人，不能凭 id 取消别人的预约；</li>
+ *   <li><b>参数校验</b>：bookId / recordId / reservationId 做整数校验；</li>
+ *   <li><b>事务一致性</b>：借书 = 写记录 + 扣库存，还书 = 改记录 + 加库存，均放在事务中。</li>
+ * </ul>
+ *
+ * <p>原有 action：myBorrows / borrow / renew / reserve / myReservations /
+ * cancelReservation / myFines，跳转页面保持不变。</p>
  */
 @WebServlet("/reader/borrowOpServlet")
 public class BorrowOpServlet extends HttpServlet {
-    private BorrowDao borrowDao = new BorrowDao();
-    private BookDao bookDao = new BookDao();
-    private ReservationDao reservationDao = new ReservationDao();
-    private FineDao fineDao = new FineDao();
-    
-    // 借阅期限（天）
+
+    private static final long serialVersionUID = 1L;
+
+    /** 借阅期限（天） */
     private static final int BORROW_DAYS = 30;
-    // 最大续借次数
+    /** 最大续借次数 */
     private static final int MAX_RENEW_COUNT = 2;
-    // 每日罚款金额
-    private static final double FINE_PER_DAY = 0.5;
-    
+    /** 单个读者最多同时借阅的册数 */
+    private static final int MAX_BORROW_LIMIT = 5;
+
+    private final BorrowDao borrowDao = new BorrowDao();
+    private final BookDao bookDao = new BookDao();
+    private final ReservationDao reservationDao = new ReservationDao();
+    private final FineDao fineDao = new FineDao();
+
     @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        // 处理GET请求的中文参数
-        request.setCharacterEncoding("UTF-8");
-        response.setContentType("text/html;charset=UTF-8");
-
-        // 手动解析查询字符串并正确解码
-        String queryString = request.getQueryString();
-        if (queryString != null) {
-            try {
-                // 使用request的参数获取方法，它会自动处理编码
-                String action = request.getParameter("action");
-
-                // 打印调试信息
-                System.out.println("=== GET请求调试信息 ===");
-                System.out.println("原始queryString: " + queryString);
-                System.out.println("action参数: " + action);
-
-                // 将参数重新设置到request中
-                if (action != null) {
-                    request.setAttribute("action", action);
-                }
-            } catch (Exception e) {
-                System.out.println("处理GET参数时出错: " + e.getMessage());
-                e.printStackTrace();
-            }
-        }
-
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
         doPost(request, response);
     }
-    
+
     @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        request.setCharacterEncoding("utf-8");
-        String action = request.getParameter("action");
-        
-        if ("myBorrows".equals(action)) {
-            showMyBorrows(request, response);
-        } else if ("borrow".equals(action)) {
-            borrowBook(request, response);
-        } else if ("renew".equals(action)) {
-            renewBook(request, response);
-        } else if ("reserve".equals(action)) {
-            reserveBook(request, response);
-        } else if ("myReservations".equals(action)) {
-            showMyReservations(request, response);
-        } else if ("cancelReservation".equals(action)) {
-            cancelReservation(request, response);
-        } else if ("myFines".equals(action)) {
-            showMyFines(request, response);
-        } else {
-            showMyBorrows(request, response);
-        }
-    }
-    
-    /**
-     * 查看我的借阅记录
-     */
-    private void showMyBorrows(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        HttpSession session = request.getSession();
-        User user = (User) session.getAttribute("loginUser");
-        
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        request.setCharacterEncoding("UTF-8");
+
+        User user = ServletUtils.requireRole(request, response, "reader");
         if (user == null) {
-            response.sendRedirect("../login.jsp");
             return;
         }
-        
-        List<BorrowRecord> allRecords = borrowDao.findByUserId(user.getId());
-        
-        // 分离当前借阅和历史记录
-        List<BorrowRecord> borrowList = new ArrayList<>();
-        List<BorrowRecord> historyList = new ArrayList<>();
-        
-        for (BorrowRecord record : allRecords) {
-            if ("borrowed".equals(record.getStatus()) || "overdue".equals(record.getStatus())) {
-                borrowList.add(record);
+
+        String action = ServletUtils.getTrimmed(request, "action");
+        try {
+            if ("borrow".equals(action)) {
+                borrowBook(request, response, user);
+            } else if ("renew".equals(action)) {
+                renewBook(request, response, user);
+            } else if ("reserve".equals(action)) {
+                reserveBook(request, response, user);
+            } else if ("myReservations".equals(action)) {
+                showMyReservations(request, response, user);
+            } else if ("cancelReservation".equals(action)) {
+                cancelReservation(request, response, user);
+            } else if ("myFines".equals(action)) {
+                showMyFines(request, response, user);
             } else {
-                historyList.add(record);
+                showMyBorrows(request, response, user);
+            }
+        } catch (AppException | IllegalArgumentException e) {
+            request.setAttribute("msg", e.getMessage());
+            showMyBorrows(request, response, user);
+        } catch (Exception e) {
+            getServletContext().log("读者借阅操作失败", e);
+            request.setAttribute("msg", "操作失败，请稍后重试");
+            showMyBorrows(request, response, user);
+        }
+    }
+
+    // ======================================================================
+    // 我的借阅
+    // ======================================================================
+
+    private void showMyBorrows(HttpServletRequest request, HttpServletResponse response, User user)
+            throws ServletException, IOException {
+        List<BorrowRecord> all = borrowDao.findByUserId(user.getId());
+        List<BorrowRecord> current = new ArrayList<>();
+        List<BorrowRecord> history = new ArrayList<>();
+        for (BorrowRecord r : all) {
+            if ("borrowed".equals(r.getStatus()) || "overdue".equals(r.getStatus())) {
+                current.add(r);
+            } else {
+                history.add(r);
             }
         }
-        
-        request.setAttribute("borrowList", borrowList);
-        request.setAttribute("historyList", historyList);
+        request.setAttribute("borrowList", current);
+        request.setAttribute("historyList", history);
         request.getRequestDispatcher("/reader/myBorrows.jsp").forward(request, response);
     }
-    
-    /**
-     * 借书（自助借书）
-     */
-    private void borrowBook(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
-        HttpSession session = request.getSession();
-        User user = (User) session.getAttribute("loginUser");
-        
-        if (user == null) {
-            response.sendRedirect("../login.jsp");
-            return;
-        }
-        
-        String bookIdStr = request.getParameter("bookId");
-        
-        if (bookIdStr == null) {
-            request.setAttribute("msg", "参数错误！");
-            showMyBorrows(request, response);
-            return;
-        }
-        
-        Integer bookId = Integer.parseInt(bookIdStr);
-        
-        // 检查是否当前正在借阅此书（未归还）
-        List<BorrowRecord> currentBorrows = borrowDao.findByUserId(user.getId());
-        boolean alreadyBorrowed = false;
-        for (BorrowRecord r : currentBorrows) {
-            if (r.getBookId().equals(bookId) && ("borrowed".equals(r.getStatus()) || "overdue".equals(r.getStatus()))) {
-                alreadyBorrowed = true;
-                break;
-            }
-        }
-        if (alreadyBorrowed) {
-            request.setAttribute("msg", "您已借阅此书，不能重复借阅！");
-            showMyBorrows(request, response);
-            return;
-        }
-        
-        // 检查库存
+
+    // ======================================================================
+    // 借书
+    // ======================================================================
+
+    private void borrowBook(HttpServletRequest request, HttpServletResponse response, User user)
+            throws ServletException, IOException {
+        int bookId = ServletUtils.requireInt(request, "bookId", "图书");
+
         Book book = bookDao.findById(bookId);
-        if (book == null || book.getAvailableStock() <= 0) {
-            request.setAttribute("msg", "该图书库存不足！");
-            showMyBorrows(request, response);
-            return;
+        if (book == null) {
+            throw new AppException("图书不存在或已下架");
         }
-        
-        // 检查是否有未支付的罚款
-        double unpaidFine = fineDao.getUnpaidAmountByUserId(user.getId());
-        if (unpaidFine > 0) {
-            request.setAttribute("msg", "您有未支付的罚款，请先缴纳罚款！");
-            showMyFines(request, response);
-            return;
+        if (borrowDao.hasBorrowed(user.getId(), bookId)) {
+            throw new AppException("您已借阅《" + book.getBname() + "》，请归还后再借");
         }
-        
-        // 创建借阅记录
-        BorrowRecord record = new BorrowRecord();
-        record.setUserId(user.getId());
-        record.setBookId(bookId);
-        record.setBorrowDate(new Date(System.currentTimeMillis()));
-        
-        Calendar cal = Calendar.getInstance();
-        cal.add(Calendar.DAY_OF_MONTH, BORROW_DAYS);
-        record.setDueDate(new Date(cal.getTimeInMillis()));
-        record.setStatus("borrowed");
-        record.setRenewCount(0);
-        record.setFineAmount(0.0);
-        record.setIsPaid(false);
-        
-        int row = borrowDao.add(record);
-        if (row > 0) {
-            // 减少可借数量
-            bookDao.decreaseAvailableStock(bookId);
-            
-            // 如果有预约记录，标记为已完成
-            Reservation reservation = reservationDao.findWaitingByUserAndBook(user.getId(), bookId);
-            if (reservation != null) {
-                reservationDao.complete(reservation.getId());
+        if (book.getAvailableStock() == null || book.getAvailableStock() <= 0) {
+            throw new AppException("《" + book.getBname() + "》暂无可借库存，可先预约");
+        }
+        if (borrowDao.countCurrentBorrowsByUserId(user.getId()) >= MAX_BORROW_LIMIT) {
+            throw new AppException("最多同时借阅 " + MAX_BORROW_LIMIT + " 本，请先归还部分图书");
+        }
+        if (fineDao.getUnpaidAmountByUserId(user.getId()) > 0) {
+            throw new AppException("您有未缴清的罚款，请先缴纳后再借书");
+        }
+
+        final String bookName = book.getBname();
+        final Calendar cal = Calendar.getInstance();
+        DBUtil.inTransaction(conn -> {
+            if (bookDao.decreaseAvailableStock(bookId) <= 0) {
+                throw new IllegalStateException("《" + bookName + "》库存不足，借阅失败");
             }
-            
-            request.setAttribute("msg", "借书成功！到期日期：" + cal.getTime());
-        } else {
-            request.setAttribute("msg", "借书失败！");
-        }
-        
-        showMyBorrows(request, response);
+            BorrowRecord record = new BorrowRecord();
+            record.setUserId(user.getId());
+            record.setBookId(bookId);
+            record.setBorrowDate(new Date(System.currentTimeMillis()));
+            Calendar dueCal = Calendar.getInstance();
+            dueCal.add(Calendar.DAY_OF_MONTH, BORROW_DAYS);
+            record.setDueDate(new Date(dueCal.getTimeInMillis()));
+            record.setStatus("borrowed");
+            record.setRenewCount(0);
+            record.setFineAmount(0d);
+            record.setIsPaid(false);
+            if (borrowDao.add(record) <= 0) {
+                throw new IllegalStateException("写入借阅记录失败");
+            }
+            // 若有等待中的预约，标记完成
+            Reservation waiting = reservationDao.findWaitingByUserAndBook(user.getId(), bookId);
+            if (waiting != null) {
+                reservationDao.complete(waiting.getId());
+            }
+        });
+
+        cal.add(Calendar.DAY_OF_MONTH, BORROW_DAYS);
+        request.setAttribute("msg", "借阅成功！请于 " + new java.text.SimpleDateFormat("yyyy-MM-dd")
+                .format(cal.getTime()) + " 前归还");
+        showMyBorrows(request, response, user);
     }
-    
-    /**
-     * 续借
-     */
-    private void renewBook(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
-        HttpSession session = request.getSession();
-        User user = (User) session.getAttribute("loginUser");
-        
-        if (user == null) {
-            response.sendRedirect("../login.jsp");
-            return;
-        }
-        
-        String recordIdStr = request.getParameter("recordId");
-        
-        if (recordIdStr == null) {
-            showMyBorrows(request, response);
-            return;
-        }
-        
-        Integer recordId = Integer.parseInt(recordIdStr);
+
+    // ======================================================================
+    // 续借
+    // ======================================================================
+
+    private void renewBook(HttpServletRequest request, HttpServletResponse response, User user)
+            throws ServletException, IOException {
+        int recordId = ServletUtils.requireInt(request, "recordId", "借阅记录");
+
         BorrowRecord record = borrowDao.findById(recordId);
-        
-        if (record == null || !record.getUserId().equals(user.getId())) {
-            request.setAttribute("msg", "记录不存在！");
-            showMyBorrows(request, response);
-            return;
+        // 关键：必须确认这条记录属于当前登录读者，防止越权续借他人图书
+        if (record == null || !user.getId().equals(record.getUserId())) {
+            throw new AppException("借阅记录不存在");
         }
-        
-        // 检查续借次数
-        if (record.getRenewCount() >= MAX_RENEW_COUNT) {
-            request.setAttribute("msg", "已达到最大续借次数！");
-            showMyBorrows(request, response);
-            return;
+        if ("returned".equals(record.getStatus())) {
+            throw new AppException("该图书已归还，无法续借");
         }
-        
-        // 检查是否逾期
+        int renewCount = record.getRenewCount() == null ? 0 : record.getRenewCount();
+        if (renewCount >= MAX_RENEW_COUNT) {
+            throw new AppException("已达到最大续借次数（" + MAX_RENEW_COUNT + " 次）");
+        }
         if (new Date(System.currentTimeMillis()).after(record.getDueDate())) {
-            request.setAttribute("msg", "图书已逾期，不能续借！");
-            showMyBorrows(request, response);
-            return;
+            throw new AppException("图书已逾期，请先归还并缴纳罚款");
         }
-        
-        // 计算新的到期日期
+
         Calendar cal = Calendar.getInstance();
         cal.setTime(record.getDueDate());
         cal.add(Calendar.DAY_OF_MONTH, BORROW_DAYS);
-        
-        int row = borrowDao.renew(recordId, new Date(cal.getTimeInMillis()));
-        if (row > 0) {
-            request.setAttribute("msg", "续借成功！新到期日期：" + cal.getTime());
-        } else {
-            request.setAttribute("msg", "续借失败！");
+
+        if (borrowDao.renew(recordId, new Date(cal.getTimeInMillis())) <= 0) {
+            throw new AppException("续借失败，请稍后重试");
         }
-        
-        showMyBorrows(request, response);
+        request.setAttribute("msg", "续借成功，新的应还日期："
+                + new java.text.SimpleDateFormat("yyyy-MM-dd").format(cal.getTime()));
+        showMyBorrows(request, response, user);
     }
-    
-    /**
-     * 预约图书
-     */
-    private void reserveBook(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
-        HttpSession session = request.getSession();
-        User user = (User) session.getAttribute("loginUser");
-        
-        if (user == null) {
-            response.sendRedirect("../login.jsp");
-            return;
+
+    // ======================================================================
+    // 预约
+    // ======================================================================
+
+    private void reserveBook(HttpServletRequest request, HttpServletResponse response, User user)
+            throws ServletException, IOException {
+        int bookId = ServletUtils.requireInt(request, "bookId", "图书");
+
+        Book book = bookDao.findById(bookId);
+        if (book == null) {
+            throw new AppException("图书不存在或已下架");
         }
-        
-        String bookIdStr = request.getParameter("bookId");
-        
-        if (bookIdStr == null) {
-            request.setAttribute("msg", "参数错误！");
-            showMyReservations(request, response);
-            return;
-        }
-        
-        Integer bookId = Integer.parseInt(bookIdStr);
-        
-        // 检查是否已借阅此书
         if (borrowDao.hasBorrowed(user.getId(), bookId)) {
-            request.setAttribute("msg", "您已借阅此书，无需预约！");
-            showMyReservations(request, response);
-            return;
+            throw new AppException("您已借阅《" + book.getBname() + "》，无需预约");
         }
-        
-        // 检查是否已预约
         if (reservationDao.findWaitingByUserAndBook(user.getId(), bookId) != null) {
-            request.setAttribute("msg", "您已预约此书！");
-            showMyReservations(request, response);
-            return;
+            throw new AppException("您已预约《" + book.getBname() + "》，请勿重复预约");
         }
-        
-        // 创建预约记录
+
         Reservation reservation = new Reservation();
         reservation.setUserId(user.getId());
         reservation.setBookId(bookId);
         reservation.setStatus("waiting");
-        
-        int row = reservationDao.add(reservation);
-        if (row > 0) {
-            request.setAttribute("msg", "预约成功！");
-        } else {
-            request.setAttribute("msg", "预约失败！");
+        if (reservationDao.add(reservation) <= 0) {
+            throw new AppException("预约失败，请稍后重试");
         }
-        
-        showMyReservations(request, response);
+        request.setAttribute("msg", "预约成功！图书可借时将优先通知您");
+        showMyReservations(request, response, user);
     }
-    
-    /**
-     * 查看我的预约
-     */
-    private void showMyReservations(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        HttpSession session = request.getSession();
-        User user = (User) session.getAttribute("loginUser");
-        
-        if (user == null) {
-            response.sendRedirect("../login.jsp");
-            return;
-        }
-        
-        List<Reservation> reservations = reservationDao.findByUserId(user.getId());
-        request.setAttribute("reservationList", reservations);
+
+    private void showMyReservations(HttpServletRequest request, HttpServletResponse response, User user)
+            throws ServletException, IOException {
+        request.setAttribute("reservationList", reservationDao.findByUserId(user.getId()));
         request.getRequestDispatcher("/reader/myReservations.jsp").forward(request, response);
     }
-    
+
     /**
-     * 取消预约
+     * 取消预约。
+     *
+     * <p><b>越权修复</b>：旧实现直接 {@code reservationDao.cancel(id)}，
+     * 只要改一下 URL 里的 id 就能取消别人的预约。现在先查出记录并校验归属。</p>
      */
-    private void cancelReservation(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
-        HttpSession session = request.getSession();
-        User user = (User) session.getAttribute("loginUser");
-        
-        if (user == null) {
-            response.sendRedirect("../login.jsp");
-            return;
+    private void cancelReservation(HttpServletRequest request, HttpServletResponse response, User user)
+            throws ServletException, IOException {
+        int reservationId = ServletUtils.requireInt(request, "reservationId", "预约记录");
+
+        Reservation reservation = reservationDao.findById(reservationId);
+        if (reservation == null || !user.getId().equals(reservation.getUserId())) {
+            throw new AppException("预约记录不存在");
         }
-        
-        String reservationIdStr = request.getParameter("reservationId");
-        
-        if (reservationIdStr != null) {
-            reservationDao.cancel(Integer.parseInt(reservationIdStr));
-            request.setAttribute("msg", "取消预约成功！");
+        if (!"waiting".equals(reservation.getStatus()) && !"notified".equals(reservation.getStatus())) {
+            throw new AppException("该预约已结束，无法取消");
         }
-        
-        showMyReservations(request, response);
+
+        reservationDao.cancel(reservationId);
+        request.setAttribute("msg", "预约已取消");
+        showMyReservations(request, response, user);
     }
-    
-    /**
-     * 查看我的罚款
-     */
-    private void showMyFines(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        HttpSession session = request.getSession();
-        User user = (User) session.getAttribute("loginUser");
-        
-        if (user == null) {
-            response.sendRedirect("../login.jsp");
-            return;
-        }
-        
+
+    // ======================================================================
+    // 我的罚款
+    // ======================================================================
+
+    private void showMyFines(HttpServletRequest request, HttpServletResponse response, User user)
+            throws ServletException, IOException {
         List<FineRecord> fines = fineDao.findByUserId(user.getId());
-        double unpaidAmount = fineDao.getUnpaidAmountByUserId(user.getId());
-        
+        double unpaid = fineDao.getUnpaidAmountByUserId(user.getId());
         request.setAttribute("fineList", fines);
-        request.setAttribute("unpaidAmount", unpaidAmount);
+        request.setAttribute("unpaidAmount", unpaid);
         request.getRequestDispatcher("/reader/myFines.jsp").forward(request, response);
     }
 }

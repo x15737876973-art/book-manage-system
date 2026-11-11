@@ -1,0 +1,32 @@
+# ==========================================================
+# 智能图书问答（RAG Agent）配置文件模板
+#
+# 使用方式：
+#   1. 复制本文件为同目录下的 agent.properties（去掉 .example 后缀）
+#   2. 把 agent.api.key 改成你自己的 DeepSeek API Key
+#   3. agent.properties 已被 .gitignore 忽略，不会提交到仓库
+#
+# API Key 申请步骤见 com.book.agent.AgentConfig 类注释，简要版：
+#   https://platform.deepseek.com → 登录 → API keys → 创建 API key → 复制 sk-xxxx
+#
+# 读取优先级：环境变量 DEEPSEEK_API_KEY > 系统属性 -Ddeepseek.api.key > 本文件
+# ==========================================================
+
+# DeepSeek API Key，形如 sk-xxxxxxxxxxxxxxxx
+# 留空则智能问答会退化为"本地检索模式"（只按数据库结果做规则回答，不调用大模型）
+agent.api.key=在这里填写你的 DeepSeek API Key
+
+# API 基础地址，一般无需修改
+agent.base.url=https://api.deepseek.com
+
+# 使用的模型
+#   deepseek-chat     —— 通用对话模型，速度快、价格低，推荐
+#   deepseek-reasoner —— 深度推理模型，回答更严谨但更慢、更贵
+agent.model=deepseek-chat
+
+# 单次请求超时时间（秒）
+agent.timeout.seconds=60
+
+# 每次从数据库检索多少本相关图书作为知识库上下文
+# 数值越大信息越全，但消耗的 token 越多、响应越慢
+agent.top.k=8
