@@ -52,15 +52,15 @@
         <div style="margin-top: 20px;">
             <a href="indexServlet" class="btn">🏠 返回首页</a>
             <a href="bookManageServlet?action=list" class="btn">📖 图书列表</a>
-            <a href="testBooks.jsp" class="btn" style="background: #28a745;">🔍 诊断页面</a>
+            <a href="checkBooks" class="btn" style="background: #28a745;">🔍 数据库检查</a>
         </div>
         
         <div style="margin-top: 30px; padding: 15px; background: #e7f3ff; border-radius: 5px;">
             <h4>💡 可能的解决方案：</h4>
             <ol>
-                <li>检查数据库连接是否正常</li>
-                <li>确认数据库中是否有分类数据</li>
-                <li>访问<a href="testBooks.jsp" style="color: #007bff;">诊断页面</a>查看详细信息</li>
+                <li>检查数据库连接是否正常（MySQL 服务是否启动）</li>
+                <li>确认已执行 <code>database_init.sql</code> 初始化数据</li>
+                <li>访问 <a href="checkBooks" style="color: #007bff;">数据库检查</a> 查看当前数据量</li>
                 <li>重启服务器后重试</li>
             </ol>
         </div>

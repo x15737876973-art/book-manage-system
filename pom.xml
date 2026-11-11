@@ -14,9 +14,18 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- 依赖版本集中管理 -->
+        <hikaricp.version>5.1.0</hikaricp.version>
+        <slf4j.version>2.0.13</slf4j.version>
+        <logback.version>1.5.6</logback.version>
+        <junit.version>5.10.2</junit.version>
+        <h2.version>2.2.224</h2.version>
     </properties>
 
     <dependencies>
+        <!-- ==================== Web 容器 API（由 Tomcat 提供） ==================== -->
         <dependency>
             <groupId>javax.servlet</groupId>
             <artifactId>javax.servlet-api</artifactId>
@@ -37,19 +46,62 @@
             <version>1.2</version>
         </dependency>
 
+        <!-- ==================== 数据库驱动 ==================== -->
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
             <version>8.0.33</version>
         </dependency>
 
-        <!-- BCrypt 密码加密：jBCrypt 是 BCrypt 算法的官方 Java 参考实现，
+        <!-- ==================== 连接池 ====================
+             HikariCP 是目前性能最好、被 Spring Boot 设为默认的 JDBC 连接池。
+             它复用物理连接，避免每次请求都做 TCP 握手 + MySQL 认证。 -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>${hikaricp.version}</version>
+        </dependency>
+
+        <!-- ==================== 日志 ====================
+             门面 + 实现分离：业务代码只依赖 slf4j-api，
+             运行期可自由替换实现（logback / log4j2）。 -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+        </dependency>
+
+        <!-- ==================== 密码加密 ====================
+             jBCrypt 是 BCrypt 算法的官方 Java 参考实现，
              与 Spring Security / OpenBSD bcrypt 完全兼容。
              密码学算法请使用成熟实现，不要自己手写。 -->
         <dependency>
             <groupId>org.mindrot</groupId>
             <artifactId>jbcrypt</artifactId>
             <version>0.4</version>
+        </dependency>
+
+        <!-- ==================== 测试 ====================
+             JUnit 5 + H2 内存数据库：测试不依赖真实 MySQL，
+             任何机器上 mvn test 都能直接跑。 -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>${h2.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -60,6 +112,26 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-war-plugin</artifactId>
                 <version>3.3.2</version>
+            </plugin>
+
+            <!-- 编译插件：显式指定版本，保证 CI 上行为一致 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+
+            <!-- 测试插件：JUnit 5 需要 surefire 3.x 才支持 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <argLine>-Dfile.encoding=UTF-8</argLine>
+                </configuration>
             </plugin>
         </plugins>
     </build>

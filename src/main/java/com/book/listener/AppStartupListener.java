@@ -1,6 +1,8 @@
 package com.book.listener;
 
 import com.book.util.DBUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
@@ -10,30 +12,29 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 
 /**
- * 应用启动监听器：启动时做一次数据库连通性与数据量自检。
+ * 应用启动监听器：启动时做一次数据库连通性与数据量自检，
+ * 应用停止时关闭连接池。
  *
- * <p>改造点：使用 try-with-resources 管理连接，避免启动阶段连接泄漏；
- * 数据库异常不会阻断应用启动，只在日志中给出清晰提示。</p>
+ * <p>数据库异常不会阻断应用启动（避免启动即失败难以排查），
+ * 只在日志中给出清晰的排查提示。</p>
  */
 @WebListener
 public class AppStartupListener implements ServletContextListener {
 
+    private static final Logger log = LoggerFactory.getLogger(AppStartupListener.class);
+
     @Override
     public void contextInitialized(ServletContextEvent sce) {
-        System.out.println("========================================");
-        System.out.println("  图书管理系统启动中...");
-        System.out.println("========================================");
-
+        log.info("================ 图书管理系统启动中 ================");
         checkDatabaseStatus();
-
-        System.out.println("========================================");
-        System.out.println("  系统启动完成");
-        System.out.println("========================================");
+        log.info("================ 系统启动完成 ================");
     }
 
     @Override
     public void contextDestroyed(ServletContextEvent sce) {
-        System.out.println("图书管理系统已关闭");
+        log.info("图书管理系统正在关闭，释放连接池...");
+        DBUtil.shutdown();
+        log.info("图书管理系统已关闭");
     }
 
     /** 检查数据库连接与关键表的数据量 */
@@ -44,21 +45,18 @@ public class AppStartupListener implements ServletContextListener {
             int books = count(conn, "books");
             int borrows = count(conn, "borrow_records");
 
-            System.out.println("[启动自检] 数据库连接正常");
-            System.out.println("  分类：" + categories + " 个");
-            System.out.println("  用户：" + users + " 个");
-            System.out.println("  图书：" + books + " 本");
-            System.out.println("  借阅记录：" + borrows + " 条");
+            log.info("启动自检：数据库连接正常 | 分类 {} 个 | 用户 {} 个 | 图书 {} 本 | 借阅记录 {} 条",
+                    categories, users, books, borrows);
+            log.info("连接池状态：{}", DBUtil.poolStats());
 
             if (users == 0) {
-                System.out.println("[启动自检] 提示：暂无用户，请以管理员身份访问 /initSystem 初始化");
+                log.warn("启动自检：暂无用户，请以管理员身份访问 /initSystem 完成初始化");
             }
             if (books == 0) {
-                System.out.println("[启动自检] 提示：暂无图书，可在管理员首页执行系统初始化");
+                log.warn("启动自检：暂无图书，可在管理员首页执行系统初始化");
             }
         } catch (Exception e) {
-            System.out.println("[启动自检] 数据库检查失败：" + e.getMessage());
-            System.out.println("[启动自检] 请确认 MySQL 已启动，并检查 db.properties 中的连接配置");
+            log.error("启动自检：数据库检查失败 —— 请确认 MySQL 已启动，并检查 db.properties 中的连接配置", e);
         }
     }
 

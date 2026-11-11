@@ -1,5 +1,8 @@
 package com.book.agent;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -54,6 +57,8 @@ import java.util.Properties;
  * @see com.book.agent.DeepSeekClient
  */
 public final class AgentConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(AgentConfig.class);
 
     private static final String CONFIG_FILE = "agent.properties";
 
@@ -183,28 +188,28 @@ public final class AgentConfig {
                 || lower.contains("your_api_key")
                 || lower.equals("sk-xxx") || lower.equals("sk-xxxxxxxxxxxxxxxx")
                 || lower.equals("none") || lower.equals("null")) {
-            System.out.println("[AgentConfig] 检测到模板占位值，视为未配置 API Key");
+            log.warn("[AgentConfig] 检测到模板占位值，视为未配置 API Key");
             return null;
         }
 
         // 2) 含中文 → 一定是说明文字
         for (int i = 0; i < key.length(); i++) {
             if (key.charAt(i) > 0x4E00 && key.charAt(i) < 0x9FFF) {
-                System.out.println("[AgentConfig] API Key 含中文字符，视为未配置");
+                log.warn("[AgentConfig] API Key 含中文字符，视为未配置");
                 return null;
             }
         }
 
         // 3) 含空白 → 复制时带了换行或空格
         if (key.matches(".*\\s.*")) {
-            System.out.println("[AgentConfig] API Key 含空白字符，请检查是否复制时多了空格或换行");
+            log.warn("[AgentConfig] API Key 含空白字符，请检查是否复制时多了空格或换行");
             return null;
         }
 
         // 4) 长度下限：过短的值不可能有效
         //    门槛设得很低（4 字符），因为本地部署（Ollama 等）常用 "ollama" 这类短占位值
         if (key.length() < 4) {
-            System.out.println("[AgentConfig] API Key 过短（" + key.length() + " 字符），视为未配置");
+            log.warn("[AgentConfig] API Key 过短（{} 字符），视为未配置", key.length());
             return null;
         }
 

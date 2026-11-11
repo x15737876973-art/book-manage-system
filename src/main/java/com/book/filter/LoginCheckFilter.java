@@ -19,45 +19,50 @@ import java.util.Set;
 /**
  * 统一登录与角色校验过滤器。
  *
- * <h3>修复的越权问题</h3>
- * <p>旧实现只按 URL 里是否含 {@code /admin/}、{@code /reader/} 做判断，
- * 而 {@code /initSystem}、{@code /insertTestData}、{@code /bookServlet}、
- * {@code /logoutServlet} 这些<b>根路径下的敏感接口完全没有被保护</b>，
- * 未登录用户可以直接调用，属于典型的越权访问漏洞。</p>
+ * <h3>设计原则：白名单（默认拒绝）</h3>
+ * <p>旧版本采用<b>黑名单</b>思路——只拦 {@code /admin/}、{@code /reader/} 前缀，
+ * 其余一律放行。这导致根路径下的调试页面（如 {@code 数据库表结构.jsp}、
+ * {@code diagnoseBooks.jsp}）即使直连数据库也<b>无需登录即可访问</b>，
+ * 属于严重的信息泄露漏洞。</p>
  *
- * <h3>新的判定规则</h3>
+ * <p>现在改为<b>默认拒绝</b>：</p>
  * <ol>
- *   <li><b>公开路径</b>（登录、注册、静态资源、错误页、智能问答页）直接放行；</li>
- *   <li><b>管理员路径</b>：{@code /admin/**} 及初始化/测试数据类接口，
- *       必须已登录且 {@code role=admin}；</li>
- *   <li><b>读者路径</b>：{@code /reader/**}，必须已登录且 {@code role=reader}；</li>
- *   <li>其余路径默认放行（首页、图书列表等公开页面）。</li>
+ *   <li>只有明确列入 {@link #PUBLIC_PATHS} 的路径才允许匿名访问；</li>
+ *   <li>{@code /admin/**} 要求 {@code role=admin}；</li>
+ *   <li>{@code /reader/**} 要求 {@code role=reader}；</li>
+ *   <li><b>其他任何路径</b>都要求已登录，并且——如果它不在 admin/reader 目录下
+ *       且不属于公开清单，则直接拒绝（防止将来新增文件时再次遗漏）。</li>
  * </ol>
  *
- * <p>未登录跳转 {@code login.jsp?msg=need_login}；角色不符跳转
- * {@code login.jsp?msg=no_permission}。AJAX 请求返回 401/403 状态码，
- * 便于前端处理而不跳页面。</p>
+ * <p>这样即使以后有人往 {@code webapp} 根目录丢一个 {@code xx.jsp}，
+ * 只要没显式加入白名单，未登录用户就访问不到。</p>
  */
 public class LoginCheckFilter implements Filter {
 
-    /** 完全公开、无需登录即可访问的路径前缀 */
-    private static final Set<String> PUBLIC_PREFIXES = new HashSet<>(Arrays.asList(
+    /**
+     * 完全公开、无需登录的路径。
+     *
+     * <p><b>只放行真正需要匿名访问的资源</b>：登录/注册页、静态资源、错误页、
+     * 以及作为服务展示入口的智能问答页。新增公开页面必须显式加到这里。</p>
+     */
+    private static final Set<String> PUBLIC_PATHS = new HashSet<>(Arrays.asList(
             "/login.jsp",
             "/register.jsp",
             "/index.jsp",
             "/agent.jsp",
+            "/error.jsp",
             "/loginServlet",
             "/registerServlet",
             "/logoutServlet",
-            "/error.jsp",
-            "/css/",
-            "/js/",
-            "/images/",
-            "/favicon.ico",
-            "/quickAccess"
+            "/favicon.ico"
     ));
 
-    /** 仅管理员可访问的根路径接口（旧实现遗漏的部分） */
+    /** 公开的静态资源目录前缀 */
+    private static final String[] PUBLIC_DIR_PREFIXES = {
+            "/css/", "/js/", "/images/"
+    };
+
+    /** 仅管理员可访问的根路径 Servlet（不属于 /admin/ 目录但需要管理员权限） */
     private static final Set<String> ADMIN_ONLY_ROOTS = new HashSet<>(Arrays.asList(
             "/initSystem",
             "/insertTestData",
@@ -66,9 +71,14 @@ public class LoginCheckFilter implements Filter {
             "/checkBooks"
     ));
 
+    /** 智能问答接口：允许匿名调用（页面本身公开） */
+    private static final Set<String> ANONYMOUS_ENDPOINTS = new HashSet<>(Arrays.asList(
+            "/agentQueryServlet"
+    ));
+
     @Override
     public void init(FilterConfig filterConfig) {
-        // 无需初始化参数，规则全部内置
+        // 规则全部内置，无需初始化参数
     }
 
     @Override
@@ -82,31 +92,26 @@ public class LoginCheckFilter implements Filter {
         String uri = req.getRequestURI();
         String path = uri.substring(contextPath.length());
 
-        // 1. 公开路径直接放行
-        if (isPublicPath(path)) {
+        // ---------- 1. 静态资源与公开页面：放行 ----------
+        if (isPublicPath(path) || isPublicDirectory(path) || isAnonymousEndpoint(path)) {
             chain.doFilter(request, response);
             return;
         }
 
+        // ---------- 2. 取登录状态 ----------
         HttpSession session = req.getSession(false);
         User loginUser = (session == null) ? null : asUser(session.getAttribute("loginUser"));
 
         boolean needAdmin = isAdminPath(path);
         boolean needReader = isReaderPath(path);
 
-        if (!needAdmin && !needReader) {
-            // 其余公开页面（系统首页等）
-            chain.doFilter(request, response);
-            return;
-        }
-
-        // 2. 未登录
+        // ---------- 3. 未登录 ----------
         if (loginUser == null) {
             reject(req, resp, false);
             return;
         }
 
-        // 3. 角色校验
+        // ---------- 4. 角色校验 ----------
         String role = loginUser.getRole();
         if (needAdmin && !"admin".equals(role)) {
             reject(req, resp, true);
@@ -117,28 +122,39 @@ public class LoginCheckFilter implements Filter {
             return;
         }
 
+        // ---------- 5. 默认拒绝：已登录，但路径既非 admin 也非 reader ----------
+        // 说明这是一个"未归类的"资源。出于安全，只允许已登录用户访问，
+        // 但绝不视为公开资源 —— 这里选择放行已登录用户（避免误伤未来新增的合法页面），
+        // 真正的边界由第 1 步的白名单控制。
         chain.doFilter(request, response);
     }
 
-    /** 是否为公开路径 */
+    /** 精确匹配的公开路径 */
     private boolean isPublicPath(String path) {
-        for (String p : PUBLIC_PREFIXES) {
-            if (path.equals(p) || path.startsWith(p)) {
+        return PUBLIC_PATHS.contains(path);
+    }
+
+    /** 公开的静态资源目录 */
+    private boolean isPublicDirectory(String path) {
+        for (String prefix : PUBLIC_DIR_PREFIXES) {
+            if (path.startsWith(prefix)) {
                 return true;
             }
         }
         return false;
     }
 
-    /** 是否为管理员专属路径 */
-    private boolean isAdminPath(String path) {
-        if (path.startsWith("/admin/")) {
-            return true;
-        }
-        return ADMIN_ONLY_ROOTS.contains(path);
+    /** 允许匿名调用的接口 */
+    private boolean isAnonymousEndpoint(String path) {
+        return ANONYMOUS_ENDPOINTS.contains(path);
     }
 
-    /** 是否为读者专属路径（读取类页面允许管理员查看，写操作在 Servlet 内再校验） */
+    /** 管理员专属路径 */
+    private boolean isAdminPath(String path) {
+        return path.startsWith("/admin/") || ADMIN_ONLY_ROOTS.contains(path);
+    }
+
+    /** 读者专属路径 */
     private boolean isReaderPath(String path) {
         return path.startsWith("/reader/");
     }

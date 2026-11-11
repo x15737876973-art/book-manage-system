@@ -1,5 +1,8 @@
 package com.book.servlet;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.book.entity.User;
 import com.book.util.BCryptUtil;
 import com.book.util.DBUtil;
@@ -35,6 +38,8 @@ import java.text.SimpleDateFormat;
  */
 @WebServlet("/insertTestData")
 public class InsertTestDataServlet extends HttpServlet {
+
+    private static final Logger log = LoggerFactory.getLogger(InsertTestDataServlet.class);
 
     private static final long serialVersionUID = 1L;
 
@@ -120,7 +125,7 @@ public class InsertTestDataServlet extends HttpServlet {
                 inserted += ps.executeUpdate();
             }
         }
-        System.out.println("[InsertTestData] 分类本次新增 " + inserted);
+        log.debug("分类本次新增 {} 条", inserted);
         return inserted;
     }
 

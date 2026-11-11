@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logback 日志配置
+
+  设计要点：
+    1. 控制台输出 INFO 及以上级别，格式简洁，便于开发调试；
+    2. 文件输出按天滚动，保留 30 天，单文件上限 50MB，防止磁盘写满；
+    3. 应用自身的日志（com.book）单独文件，级别可通过系统属性覆盖，
+       便于线上排查；
+    4. 第三方框架（HikariCP 等）默认 WARN，避免刷屏。
+
+  可通过 JVM 参数调整级别，例如：
+    -Dlog.level.com.book=DEBUG
+-->
+<configuration>
+
+    <property name="LOG_HOME" value="${catalina.base:-.}/logs"/>
+    <property name="APP_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"/>
+
+    <!-- ==================== 控制台 ==================== -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${APP_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- ==================== 应用日志文件 ==================== -->
+    <appender name="APP_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_HOME}/book-manage.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_HOME}/book-manage.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${APP_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- ==================== 错误日志单独归档 ==================== -->
+    <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_HOME}/book-manage-error.log</file>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_HOME}/book-manage-error.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>20MB</maxFileSize>
+            <maxHistory>60</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${APP_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- ==================== 级别控制 ==================== -->
+
+    <!-- 应用自身：默认 INFO，可用 -Dlog.level.com.book=DEBUG 覆盖 -->
+    <logger name="com.book" level="${log.level.com.book:-INFO}">
+        <appender-ref ref="APP_FILE"/>
+        <appender-ref ref="ERROR_FILE"/>
+    </logger>
+
+    <!-- 连接池：INFO 足以看到启动与异常，避免每次借还连接都打日志 -->
+    <logger name="com.zaxxer.hikari" level="INFO"/>
+
+    <!-- 第三方框架保持 WARN，减少噪音 -->
+    <logger name="org.apache" level="WARN"/>
+    <logger name="org.springframework" level="WARN"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+</configuration>

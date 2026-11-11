@@ -1,5 +1,8 @@
 package com.book.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -15,6 +18,8 @@ import java.sql.SQLException;
  * PreparedStatement 占位符</b>，并改为批量执行提升性能。</p>
  */
 public final class InsertBooksUtil {
+
+    private static final Logger log = LoggerFactory.getLogger(InsertBooksUtil.class);
 
     /** 示例图书：{bid, isbn, 书名, 作者, 出版社, 出版日期, 价格, 分类id, 库存, 位置} */
     private static final String[][] SAMPLE_BOOKS = {
@@ -56,7 +61,7 @@ public final class InsertBooksUtil {
         try (Connection conn = DBUtil.requireConnection()) {
             int existing = countBooks(conn);
             if (existing > 0) {
-                System.out.println("[InsertBooksUtil] 数据库中已有 " + existing + " 本图书，跳过导入");
+                log.info("数据库中已有 {} 本图书，跳过导入", existing);
                 return 0;
             }
 
@@ -84,12 +89,11 @@ public final class InsertBooksUtil {
                     }
                 }
             }
-            System.out.println("[InsertBooksUtil] 成功导入 " + inserted + " 本图书");
+            log.info("成功导入 {} 本图书", inserted);
             return inserted;
 
         } catch (SQLException e) {
-            System.out.println("[InsertBooksUtil] 导入失败: " + e.getMessage());
-            e.printStackTrace();
+            log.error("导入图书失败", e);
             return 0;
         }
     }

@@ -1,0 +1,57 @@
+name: CI
+
+# 触发条件：推送到 main 分支、向 main 提 PR、以及手动触发
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & Test (JDK ${{ matrix.java }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 同时验证 JDK 11（本项目编译目标）与 JDK 17（未来升级路径）
+        java: [ '11', '17' ]
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 JDK ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: 编译（含测试代码编译）
+        run: mvn -B clean test-compile
+
+      - name: 运行单元测试
+        # 测试使用 H2 内存库，无需启动 MySQL
+        run: mvn -B test
+
+      - name: 打包 war
+        run: mvn -B package -DskipTests
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-jdk${{ matrix.java }}
+          path: target/surefire-reports/
+          retention-days: 7
+
+      - name: 上传构建产物
+        if: matrix.java == '11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: book-manage-war
+          path: target/*.war
+          retention-days: 7

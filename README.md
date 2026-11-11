@@ -93,16 +93,30 @@
 
 | 层次 | 技术 |
 |---|---|
-| 开发语言 | Java 8 / 11 |
-| 构建工具 | Apache Maven |
+| 开发语言 | Java 11 |
+| 构建工具 | Apache Maven 3.6+ |
 | Web 层 | Servlet 3.1（`@WebServlet` 注解）、JSP 2.3、JSTL 1.2 |
 | 数据访问 | 原生 JDBC + `PreparedStatement`（全量预编译，无 SQL 拼接） |
-| 连接管理 | `DBUtil` 统一封装，`try-with-resources` 自动释放，支持事务 |
+| **连接池** | **HikariCP 5.1.0**（Spring Boot 默认连接池，复用物理连接） |
+| **事务** | `ThreadLocal` 绑定连接，跨 DAO 操作共享同一事务 |
+| **日志** | **SLF4J 2.0 + Logback 1.5**（门面与实现分离，按天滚动 + 错误单独归档） |
 | 密码安全 | **BCrypt**（jBCrypt 0.4，cost=10） |
+| **测试** | **JUnit 5 + H2 内存库**（81 个用例，`mvn test` 零依赖运行） |
+| **CI** | **GitHub Actions**（JDK 11/17 双版本矩阵，自动测试与打包） |
 | 前端 | JSP + 原生 CSS / JavaScript（无框架依赖） |
-| 大模型 | DeepSeek Open API（兼容 OpenAI `/chat/completions` 协议） |
-| 服务器 | Apache Tomcat 8.5 / 9.0 |
+| 大模型 | OpenAI 兼容协议（支持 DeepSeek / 千问 / Ollama 等） |
+| 服务器 | Apache Tomcat 8.5 / 9.0（兼容 7.0） |
 | 数据库 | MySQL 5.7 / 8.0 |
+
+### 工程质量指标
+
+| 指标 | 数值 |
+|---|---|
+| Java 源文件 | 48 个 / 约 7900 行 |
+| 单元测试 | **81 个用例，全部通过** |
+| 测试覆盖 | 密码加密、DAO 分页/检索/事务、Agent 关键词与 Prompt |
+| SQL 注入 | 全量 `PreparedStatement`，6 个注入 payload 测试验证 |
+| 连接泄漏 | 全链路 try-with-resources，连接池统一归还 |
 
 ---
 
@@ -110,9 +124,10 @@
 
 ```
 book-manage-system
-├── pom.xml                              # Maven 配置（含 jbcrypt 依赖）
+├── pom.xml                              # Maven 配置（HikariCP / SLF4J / JUnit5）
 ├── README.md
-├── database_init.sql                    # ★ 建库建表 + 初始数据（密码已 BCrypt 加密）
+├── .github/workflows/ci.yml             # ★ GitHub Actions 持续集成
+├── database_init.sql                    # 建库建表 + 初始数据（密码已 BCrypt 加密）
 ├── sql/
 │   └── password_migration.sql           # 旧库明文密码批量升级为 BCrypt 的脚本
 └── src/main
@@ -590,7 +605,7 @@ IDEA Tomcat 配置的 `VM options` 里加：
 - LIKE 查询对 `%` `_` `\` 做转义（`ESCAPE '\\'`），防止用户输入通配符导致全表扫描；
 - 动态表名（统计、删表）走白名单校验。
 
-### 2. JDBC 资源释放
+### 2. JDBC 资源释放与连接池
 
 `DBUtil` 提供三个模板方法，内部全部使用 **try-with-resources**：
 
@@ -602,9 +617,121 @@ DBUtil.inTransaction(work)            // 事务
 ```
 
 即使中途抛异常，`Connection` / `PreparedStatement` / `ResultSet` 也必然关闭，
-从根本上杜绝连接泄漏。旧的 `DBUtil.close()` 保留但标记 `@Deprecated`。
+从根本上杜绝连接泄漏。
 
-### 3. 权限校验
+#### 连接池（HikariCP）
+
+早期版本直接使用 `DriverManager.getConnection()`，**每次请求都新建物理连接**
+（TCP 握手 + MySQL 认证约 5~20ms），高并发下会迅速耗尽数据库的
+`max_connections`。
+
+现已引入 **HikariCP 5.1.0**（Spring Boot 2.x 后的默认连接池，性能业界最优）：
+
+| 配置项 | 默认值 | 说明 |
+|---|---|---|
+| `maximumPoolSize` | 10 | 最大连接数 |
+| `minimumIdle` | 2 | 最小空闲连接 |
+| `connectionTimeout` | 10s | 获取连接超时 |
+| `maxLifetime` | 30min | 连接最大存活时间（避免 MySQL 8h 断连） |
+| `idleTimeout` | 10min | 空闲回收 |
+
+可通过 `db.properties` 中的 `db.pool.*` 覆盖。启动日志会打印池状态：
+
+```
+连接池初始化成功: pool=BookManagePool, maxPoolSize=10, minIdle=2
+启动自检：数据库连接正常 | 分类 31 个 | 用户 31 个 | 图书 31 本
+连接池状态：活跃=1, 空闲=0, 总数=1, 等待线程=0
+```
+
+#### 日志
+
+采用 **SLF4J + Logback**：业务代码只依赖 `slf4j-api` 门面，实现可替换。
+
+- 控制台输出 INFO 及以上；
+- 文件按天滚动（`logs/book-manage.log`），保留 30 天，单文件 50MB 上限；
+- **ERROR 单独归档**到 `logs/book-manage-error.log`，便于线上排查；
+- 可通过 `-Dlog.level.com.book=DEBUG` 动态调整应用日志级别。
+
+### 3. 权限校验（白名单默认拒绝）
+
+**旧版漏洞分两次修复：**
+
+1. 最初 `LoginCheckFilter` 只按 URL 是否包含 `/admin/`、`/reader/` 判断，
+   导致根路径下的 `/initSystem`、`/insertTestData`、`/bookServlet` **完全未受保护**；
+2. 进一步审计发现：根目录的调试页（`数据库表结构.jsp`、`diagnoseBooks.jsp` 等 **直连数据库**）
+   既不匹配 admin/reader 前缀，也不在白名单中，**未登录可直接访问并看到全部表结构**。
+
+**最终方案：白名单（默认拒绝）**。只有明确列入白名单的路径才允许匿名访问：
+
+| 路径 | 要求 |
+|---|---|
+| `/admin/**`、`/initSystem`、`/insertTestData`、`/insertOverdueAndFine`、`/bookServlet`、`/checkBooks` | 已登录 **且** `role=admin` |
+| `/reader/**` | 已登录 **且** `role=reader` |
+| `/login.jsp`、`/register.jsp`、`/index.jsp`、`/agent.jsp`、`/error.jsp`、`/loginServlet`、`/registerServlet`、`/logoutServlet`、`/agentQueryServlet`、`/css/**`、`/js/**` | 公开 |
+| **其他任何路径** | 未登录一律拒绝 |
+
+同时**删除 13 个调试页面（共 2144 行）**，包括：
+
+```
+数据库表结构.jsp / 数据库容量信息.jsp / diagnoseBooks.jsp / insertTestData.jsp
+updateUserNames.jsp / admin/debugUsers.jsp / admin/testBooks.jsp
+admin/addTestBorrows.jsp / insertBooks.html / 快速访问.html
+bookList.jsp / editBook.jsp / checkFine.jsp   （已被 admin/ 下同名页面取代）
+```
+
+这样将来即使有人往 `webapp` 根目录新增文件，只要没显式加入白名单，未登录用户就访问不到。
+
+### 4. 单元测试
+
+**81 个 JUnit 5 用例**，使用 **H2 内存数据库**（`MODE=MySQL`），
+不依赖真实 MySQL，任何机器上 `mvn test` 即可运行。
+
+| 测试类 | 用例数 | 覆盖内容 |
+|---|---|---|
+| `BCryptUtilTest` | 28 | 密文格式、随机盐、往返校验、边界输入、历史明文兼容 |
+| `BookDaoTest` | 34 | 分页边界、模糊检索、**SQL 注入防护**、CRUD、库存原子性、**事务回滚**、Agent 检索 |
+| `AgentTest` | 19 | 中文关键词提取、Prompt 防幻觉约束、URL 拼接、寒暄词过滤 |
+
+关键测试示例：
+
+```java
+// 验证库存为 0 时不会扣成负数（防超卖核心逻辑）
+@Test
+void cannotDecreaseBelowZero() {
+    Book soldOut = bookDao.findByBid("B003");   // available_stock = 0
+    int affected = bookDao.decreaseAvailableStock(soldOut.getId());
+    assertEquals(0, affected, "库存为 0 时 UPDATE 应影响 0 行");
+}
+
+// 验证 SQL 注入被当作普通文本
+@ParameterizedTest
+@ValueSource(strings = {"' OR '1'='1", "'; DROP TABLE books; --", "' UNION SELECT * FROM users --"})
+void injectionIsTreatedAsLiteral(String payload) {
+    PageResult<Book> page = bookDao.searchPage(payload, null, 1, 10);
+    assertNotEquals(25, page.getTotalRecords(), "注入成功会返回全部数据");
+}
+
+// 验证事务内多个 DAO 操作共享同一连接（否则回滚无效）
+@Test
+void multipleOperationsShareConnection() {
+    assertThrows(RuntimeException.class, () -> DBUtil.inTransaction(conn -> {
+        bookDao.decreaseAvailableStock(book.getId());
+        bookDao.decreaseAvailableStock(book.getId());
+        throw new RuntimeException("第二步之后失败");
+    }));
+    assertEquals(before, bookDao.findById(book.getId()).getAvailableStock());
+}
+```
+
+### 5. 持续集成（GitHub Actions）
+
+`.github/workflows/ci.yml` 在每次 push / PR 时自动：
+
+- 用 **JDK 11 和 JDK 17 两个版本** 并行构建；
+- 编译 + 运行全部单元测试；
+- 打 war 包并上传测试报告与构建产物。
+
+### 6. 权限校验（历史说明）
 
 **旧版漏洞**：`LoginCheckFilter` 只按 URL 是否包含 `/admin/`、`/reader/` 判断，
 导致根路径下的 `/initSystem`、`/insertTestData`、`/bookServlet`、`/insertOverdueAndFine`
