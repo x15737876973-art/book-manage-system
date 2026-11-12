@@ -30,3 +30,6 @@ src/main/resources/agent.properties
 
 # 编辑器/工具目录
 .feisuan/
+
+# 简历文件含个人联系方式，不纳入版本控制
+docs/简历-*
